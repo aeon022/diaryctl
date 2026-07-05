@@ -25,6 +25,7 @@ type DayStats struct {
 	Date         time.Time
 	Repos        []string
 	Commits      []CommitStat
+	ByRepo       map[string][]CommitStat // commits grouped by repo name
 	TotalFiles   int
 	TotalAdded   int
 	TotalDeleted int

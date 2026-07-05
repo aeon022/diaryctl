@@ -6,67 +6,103 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aeon022/diaryctl/internal/git"
 	"github.com/aeon022/diaryctl/internal/models"
-	"github.com/aeon022/diaryctl/internal/store"
+	"github.com/aeon022/diaryctl/internal/suite"
 )
 
-// BuildEntryBody constructs the markdown diary entry body for the given date.
-func BuildEntryBody(repos []models.Repo, date time.Time, s *store.Store) (string, error) {
-	ds, err := git.DayStats(repos, date)
-	if err != nil {
-		return "", err
+// formatDuration formats a duration as "Xh Ym" (no seconds).
+func formatDuration(d time.Duration) string {
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	if h > 0 && m > 0 {
+		return fmt.Sprintf("%dh %dm", h, m)
 	}
-	byRepo, err := git.CommitsByRepo(repos, date)
-	if err != nil {
-		return "", err
+	if h > 0 {
+		return fmt.Sprintf("%dh", h)
 	}
-	streak, _ := s.GetStreak()
+	return fmt.Sprintf("%dm", m)
+}
 
+// BuildEntryBody constructs the markdown diary entry body for the given day.
+func BuildEntryBody(
+	stats models.DayStats,
+	tasks []suite.CompletedTask,
+	events []suite.CalendarEvent,
+	timeEntries []suite.TimeEntry,
+) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("# %s\n\n", date.Format("2006-01-02")))
+
+	sb.WriteString(fmt.Sprintf("# %s\n\n", stats.Date.Format("2006-01-02")))
+
+	// --- Stats ---
 	sb.WriteString("## Stats\n")
-	sb.WriteString(fmt.Sprintf("- **Commits:** %d across %d repos\n", len(ds.Commits), len(ds.Repos)))
-	sb.WriteString(fmt.Sprintf("- **Files changed:** %d\n", ds.TotalFiles))
-	sb.WriteString(fmt.Sprintf("- **Lines:** +%d / -%d\n", ds.TotalAdded, ds.TotalDeleted))
-
-	if len(ds.Commits) > 0 {
-		earliest := ds.Commits[0].Timestamp
-		latest := ds.Commits[0].Timestamp
-		for _, c := range ds.Commits {
-			if c.Timestamp.Before(earliest) {
-				earliest = c.Timestamp
-			}
-			if c.Timestamp.After(latest) {
-				latest = c.Timestamp
-			}
-		}
-		sb.WriteString(fmt.Sprintf("- **Active window:** %s – %s (estimated)\n",
-			earliest.Format("15:04"), latest.Format("15:04")))
+	sb.WriteString(fmt.Sprintf("- **Commits:** %d across %d repos\n", len(stats.Commits), len(stats.Repos)))
+	sb.WriteString(fmt.Sprintf("- **Files changed:** %d  |  **Lines:** +%d / -%d\n", stats.TotalFiles, stats.TotalAdded, stats.TotalDeleted))
+	sb.WriteString(fmt.Sprintf("- **Streak:** %d days\n", stats.Streak))
+	if len(timeEntries) > 0 {
+		total := suite.TotalDuration(timeEntries)
+		sb.WriteString(fmt.Sprintf("- **Time tracked:** %s\n", formatDuration(total)))
 	}
-	sb.WriteString(fmt.Sprintf("- **Streak:** %d days\n", streak))
-	sb.WriteString("\n## Commits\n")
+	sb.WriteString("\n")
 
-	for repoName, commits := range byRepo {
-		sb.WriteString(fmt.Sprintf("### %s\n", repoName))
-		for _, c := range commits {
-			sb.WriteString(fmt.Sprintf("- `%s` %s\n", c.Hash, c.Message))
+	// --- Calendar ---
+	if len(events) > 0 {
+		sb.WriteString("## Calendar\n")
+		for _, e := range events {
+			line := fmt.Sprintf("- %s–%s  %s (%s)",
+				e.Start.Format("15:04"), e.End.Format("15:04"), e.Title, e.Calendar)
+			if e.Location != "" {
+				line += fmt.Sprintf(" @ %s", e.Location)
+			}
+			sb.WriteString(line + "\n")
 		}
 		sb.WriteString("\n")
 	}
 
-	if len(byRepo) == 0 {
+	// --- Completed Tasks ---
+	if len(tasks) > 0 {
+		sb.WriteString("## Completed Tasks\n")
+		for _, t := range tasks {
+			sb.WriteString(fmt.Sprintf("- [%s] %s\n", t.List, t.Title))
+		}
+		sb.WriteString("\n")
+	}
+
+	// --- Time Log ---
+	if len(timeEntries) > 0 {
+		sb.WriteString("## Time Log\n")
+		for _, e := range timeEntries {
+			line := fmt.Sprintf("- %s  %s", formatDuration(e.Duration), e.Task)
+			if e.Project != "" {
+				line += fmt.Sprintf("  [%s]", e.Project)
+			}
+			sb.WriteString(line + "\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	// --- Commits ---
+	sb.WriteString("## Commits\n")
+	if len(stats.ByRepo) > 0 {
+		for repoName, commits := range stats.ByRepo {
+			sb.WriteString(fmt.Sprintf("### %s\n", repoName))
+			for _, c := range commits {
+				sb.WriteString(fmt.Sprintf("- `%s` %s\n", c.Hash, c.Message))
+			}
+			sb.WriteString("\n")
+		}
+	} else {
 		sb.WriteString("_No commits today._\n\n")
 	}
 
 	sb.WriteString("## Context\n")
-	sb.WriteString("<!-- AI: Read the commits above and write a narrative diary entry. What was the main focus?\n")
-	sb.WriteString("     What was hard? What felt good? Keep it personal, like a real developer diary.\n")
-	sb.WriteString("     2-3 paragraphs max. -->\n\n")
+	sb.WriteString("<!-- AI: Read everything above and write a narrative diary entry.\n")
+	sb.WriteString("     What was the main focus? What was hard? What felt good? What did you learn?\n")
+	sb.WriteString("     Keep it personal, like a real developer diary. 2-3 paragraphs. -->\n\n")
 	sb.WriteString("## Reflection\n")
 	sb.WriteString("<!-- What did you learn today? What would you do differently? -->\n\n")
 	sb.WriteString("## Tomorrow\n")
 	sb.WriteString("<!-- What's the plan? -->\n")
 
-	return sb.String(), nil
+	return sb.String()
 }

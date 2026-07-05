@@ -10,6 +10,7 @@ import (
 	"github.com/aeon022/diaryctl/internal/git"
 	"github.com/aeon022/diaryctl/internal/models"
 	"github.com/aeon022/diaryctl/internal/store"
+	"github.com/aeon022/diaryctl/internal/suite"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -114,15 +115,19 @@ func handleGetTodayStats(_ context.Context, _ mcp.CallToolRequest, s *store.Stor
 		Additions int    `json:"additions"`
 		Deletions int    `json:"deletions"`
 	}
-	type result struct {
-		Date         string       `json:"date"`
-		Repos        []string     `json:"repos"`
-		TotalCommits int          `json:"total_commits"`
-		TotalFiles   int          `json:"total_files"`
-		TotalAdded   int          `json:"total_added"`
-		TotalDeleted int          `json:"total_deleted"`
-		ActiveMins   int          `json:"active_mins"`
-		Commits      []commitJSON `json:"commits"`
+	type todayStatsResponse struct {
+		Date           string       `json:"date"`
+		Repos          []string     `json:"repos"`
+		TotalCommits   int          `json:"total_commits"`
+		TotalFiles     int          `json:"total_files"`
+		TotalAdded     int          `json:"total_added"`
+		TotalDeleted   int          `json:"total_deleted"`
+		ActiveMins     int          `json:"active_mins"`
+		Commits        []commitJSON `json:"commits"`
+		CompletedTasks int          `json:"completed_tasks"`
+		CalendarEvents int          `json:"calendar_events"`
+		TimeTrackedSec int64        `json:"time_tracked_seconds"`
+		TimeTrackedStr string       `json:"time_tracked_human"`
 	}
 
 	var commits []commitJSON
@@ -138,15 +143,24 @@ func handleGetTodayStats(_ context.Context, _ mcp.CallToolRequest, s *store.Stor
 		})
 	}
 
-	res := result{
-		Date:         today.Format("2006-01-02"),
-		Repos:        ds.Repos,
-		TotalCommits: len(ds.Commits),
-		TotalFiles:   ds.TotalFiles,
-		TotalAdded:   ds.TotalAdded,
-		TotalDeleted: ds.TotalDeleted,
-		ActiveMins:   ds.ActiveMins,
-		Commits:      commits,
+	tasks, _ := suite.TodayTasks()
+	events, _ := suite.TodayEvents()
+	timeEntries, _ := suite.TodayTimeEntries()
+	totalDur := suite.TotalDuration(timeEntries)
+
+	res := todayStatsResponse{
+		Date:           today.Format("2006-01-02"),
+		Repos:          ds.Repos,
+		TotalCommits:   len(ds.Commits),
+		TotalFiles:     ds.TotalFiles,
+		TotalAdded:     ds.TotalAdded,
+		TotalDeleted:   ds.TotalDeleted,
+		ActiveMins:     ds.ActiveMins,
+		Commits:        commits,
+		CompletedTasks: len(tasks),
+		CalendarEvents: len(events),
+		TimeTrackedSec: int64(totalDur.Seconds()),
+		TimeTrackedStr: formatDuration(totalDur),
 	}
 
 	return toolJSON(res)
@@ -313,6 +327,19 @@ func handleListDiaryEntries(_ context.Context, req mcp.CallToolRequest, s *store
 }
 
 // --- helpers ---
+
+// formatDuration formats a duration as "Xh Ym" (no seconds).
+func formatDuration(d time.Duration) string {
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	if h > 0 && m > 0 {
+		return fmt.Sprintf("%dh %dm", h, m)
+	}
+	if h > 0 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dm", m)
+}
 
 func toolError(err error) *mcp.CallToolResult {
 	return mcp.NewToolResultError(err.Error())

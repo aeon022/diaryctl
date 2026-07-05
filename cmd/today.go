@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/aeon022/diaryctl/internal/diary"
+	"github.com/aeon022/diaryctl/internal/git"
 	"github.com/aeon022/diaryctl/internal/models"
 	"github.com/aeon022/diaryctl/internal/store"
+	"github.com/aeon022/diaryctl/internal/suite"
 	"github.com/spf13/cobra"
 )
 
@@ -47,10 +49,25 @@ If an entry already exists, it will be printed.`,
 				return nil
 			}
 
-			body, err := diary.BuildEntryBody(repos, today, s)
+			ds, err := git.DayStats(repos, today)
 			if err != nil {
-				return fmt.Errorf("building entry: %w", err)
+				return fmt.Errorf("reading git stats: %w", err)
 			}
+
+			byRepo, err := git.CommitsByRepo(repos, today)
+			if err != nil {
+				return fmt.Errorf("reading commits by repo: %w", err)
+			}
+			ds.ByRepo = byRepo
+
+			streak, _ := s.GetStreak()
+			ds.Streak = streak
+
+			tasks, _ := suite.TodayTasks()
+			events, _ := suite.TodayEvents()
+			times, _ := suite.TodayTimeEntries()
+
+			body := diary.BuildEntryBody(ds, tasks, events, times)
 
 			if err := s.SaveEntry(today, body, false); err != nil {
 				return fmt.Errorf("saving entry: %w", err)

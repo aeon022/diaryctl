@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/aeon022/diaryctl/internal/diary"
+	"github.com/aeon022/diaryctl/internal/git"
 	"github.com/aeon022/diaryctl/internal/models"
 	"github.com/aeon022/diaryctl/internal/store"
+	"github.com/aeon022/diaryctl/internal/suite"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -170,10 +172,26 @@ func generateToday(s *store.Store) tea.Cmd {
 			return entryGeneratedMsg{err: err}
 		}
 		today := time.Now()
-		body, err := diary.BuildEntryBody(repos, today, s)
+
+		ds, err := git.DayStats(repos, today)
 		if err != nil {
 			return entryGeneratedMsg{err: err}
 		}
+		byRepo, err := git.CommitsByRepo(repos, today)
+		if err != nil {
+			return entryGeneratedMsg{err: err}
+		}
+		ds.ByRepo = byRepo
+
+		streak, _ := s.GetStreak()
+		ds.Streak = streak
+
+		tasks, _ := suite.TodayTasks()
+		events, _ := suite.TodayEvents()
+		times, _ := suite.TodayTimeEntries()
+
+		body := diary.BuildEntryBody(ds, tasks, events, times)
+
 		if err := s.SaveEntry(today, body, false); err != nil {
 			return entryGeneratedMsg{err: err}
 		}
