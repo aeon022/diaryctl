@@ -9,6 +9,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/aeon022/diaryctl/internal/ai"
 	"github.com/aeon022/diaryctl/internal/diary"
 	"github.com/aeon022/diaryctl/internal/git"
 	"github.com/aeon022/diaryctl/internal/suite"
@@ -235,16 +236,27 @@ var daemonGenerateCmd = &cobra.Command{
 		times, _ := suite.TodayTimeEntries()
 
 		body := diary.BuildEntryBody(ds, tasks, events, times)
+
+		// If ANTHROPIC_API_KEY is set, let Claude write the narrative automatically.
+		notif := "Your diary template is ready. Open Claude Desktop to write the narrative."
+		if filled, err := ai.Fill(body); err == nil {
+			body = filled
+			fmt.Println("✓ Claude wrote the narrative")
+			notif = "Your diary entry for today is written. Open diaryctl to review."
+		} else if err != ai.ErrNoAPIKey {
+			fmt.Printf("⚠ Claude error: %v — saving template only\n", err)
+		}
+
 		if err := s.SaveEntry(today, body, false); err != nil {
 			return fmt.Errorf("saving entry: %w", err)
 		}
 
-		fmt.Printf("✓ Diary template generated for %s\n", today.Format("2006-01-02"))
+		fmt.Printf("✓ Diary entry saved for %s\n", today.Format("2006-01-02"))
 
 		// macOS notification.
 		if runtime.GOOS == "darwin" {
 			exec.Command("osascript", "-e",
-				`display notification "Your diary template is ready. Open Claude to write the narrative." with title "diaryctl"`,
+				fmt.Sprintf(`display notification %q with title "diaryctl"`, notif),
 			).Run()
 		}
 

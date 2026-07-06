@@ -6,6 +6,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/aeon022/diaryctl/internal/ai"
 	"github.com/aeon022/diaryctl/internal/diary"
 	"github.com/aeon022/diaryctl/internal/git"
 	"github.com/aeon022/diaryctl/internal/models"
@@ -74,6 +75,10 @@ type (
 	}
 	autoSaveTickMsg struct{}
 	errMsg          struct{ err error }
+
+	aiChunkMsg struct{ chunk string }
+	aiDoneMsg  struct{ full string }
+	aiErrMsg   struct{ err error }
 )
 
 // ── Model ─────────────────────────────────────────────────────────────────────
@@ -114,6 +119,11 @@ type Model struct {
 	lastSaved    time.Time
 	savedFlash   bool
 	centeredMode bool
+
+	// AI streaming
+	aiGenerating bool
+	aiTokens     int
+	aiChan       chan ai.StreamResult
 
 	// repos
 	repos      []models.Repo
@@ -203,6 +213,20 @@ func cmdAutoSaveTick() tea.Cmd {
 	})
 }
 
+func waitForAI(ch chan ai.StreamResult) tea.Cmd {
+	return func() tea.Msg {
+		r := <-ch
+		switch {
+		case r.Err != nil:
+			return aiErrMsg{r.Err}
+		case r.Done:
+			return aiDoneMsg{r.Chunk}
+		default:
+			return aiChunkMsg{r.Chunk}
+		}
+	}
+}
+
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -238,6 +262,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.save()
 		}
 		return m, cmdAutoSaveTick()
+
+	case aiChunkMsg:
+		m.aiTokens += len(strings.Fields(msg.chunk))
+		return m, waitForAI(m.aiChan)
+
+	case aiDoneMsg:
+		m.aiGenerating = false
+		if msg.full != "" {
+			m.ta.SetValue(msg.full)
+			m.editorDirty = true
+		}
+		m.flash("Claude finished — review and ctrl+s to save")
+		return m, nil
+
+	case aiErrMsg:
+		m.aiGenerating = false
+		m.flash("AI error: " + msg.err.Error())
+		return m, nil
 
 	case errMsg:
 		m.err = msg.err
@@ -393,6 +435,23 @@ func (m *Model) handleEditor(msg tea.KeyMsg) tea.Cmd {
 		m.editorEntry = nil
 		m.ta.Blur()
 		return cmdLoadEntries(m.store)
+
+	case "a":
+		if m.aiGenerating {
+			return nil
+		}
+		m.aiGenerating = true
+		m.aiTokens = 0
+		m.aiChan = make(chan ai.StreamResult, 64)
+		body := m.ta.Value()
+		ch := m.aiChan
+		return tea.Batch(
+			func() tea.Msg {
+				go ai.Stream(body, ch)
+				return nil
+			},
+			waitForAI(ch),
+		)
 
 	case "ctrl+f":
 		m.centeredMode = !m.centeredMode
@@ -765,7 +824,11 @@ func (m *Model) viewEditor() string {
 	}
 	statusLeft := statusStyle.Render(date + mutedStyle.Render(fmt.Sprintf("%dw", wc)) + secStr + saveStr)
 
-	keysRight := mutedStyle.Render("ctrl+s save  [ ] jump  ctrl+f focus  esc done")
+	aKey := "a ask claude"
+	if m.aiGenerating {
+		aKey = "a writing…"
+	}
+	keysRight := mutedStyle.Render(fmt.Sprintf("ctrl+s save  %s  [ ] jump  ctrl+f focus  esc done", aKey))
 	gap := w - lipgloss.Width(statusLeft) - lipgloss.Width(keysRight)
 	if gap < 1 {
 		gap = 1
@@ -773,8 +836,12 @@ func (m *Model) viewEditor() string {
 	statusBar := statusLeft + strings.Repeat(" ", gap) + keysRight
 
 	aiHint := ""
-	if aiBlocks > 0 {
-		aiHint = "  " + mutedStyle.Render(fmt.Sprintf("%d AI prompt%s · tab to jump", aiBlocks, plural(aiBlocks)))
+	if m.aiGenerating {
+		dots := [4]string{"⠋", "⠙", "⠹", "⠸"}
+		spin := dots[time.Now().UnixMilli()/120%4]
+		aiHint = "  " + amberStyle.Render(fmt.Sprintf("%s Claude writing… %d words", spin, m.aiTokens))
+	} else if aiBlocks > 0 {
+		aiHint = "  " + mutedStyle.Render(fmt.Sprintf("%d AI prompt%s · a to fill · tab to jump", aiBlocks, plural(aiBlocks)))
 	}
 	header := lipgloss.JoinHorizontal(lipgloss.Center,
 		titleStyle.Render("diaryctl — editor"),
