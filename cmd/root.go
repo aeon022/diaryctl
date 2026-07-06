@@ -42,6 +42,7 @@ func init() {
 	rootCmd.AddCommand(showCmd)
 	rootCmd.AddCommand(statsCmd)
 	rootCmd.AddCommand(mcpCmd)
+	rootCmd.AddCommand(daemonCmd)
 }
 
 // openStore opens the default SQLite store.

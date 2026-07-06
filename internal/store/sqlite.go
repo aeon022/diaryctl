@@ -179,6 +179,13 @@ func (s *Store) ListEntries(limit int) ([]models.Entry, error) {
 	return entries, rows.Err()
 }
 
+// DeleteEntry removes an entry by date.
+func (s *Store) DeleteEntry(date time.Time) error {
+	key := date.Format("2006-01-02")
+	_, err := s.db.Exec(`DELETE FROM entries WHERE date = ?`, key)
+	return err
+}
+
 // GetStreak returns the current consecutive-day streak with at least one commit entry.
 // It counts backwards from today, checking entry existence.
 func (s *Store) GetStreak() (int, error) {
