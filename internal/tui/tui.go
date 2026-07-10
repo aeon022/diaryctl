@@ -20,13 +20,13 @@ import (
 // ── Design system ─────────────────────────────────────────────────────────────
 
 var (
-	colorGreen  = lipgloss.AdaptiveColor{Light: "28", Dark: "42"}
-	colorAmber  = lipgloss.AdaptiveColor{Light: "214", Dark: "220"}
-	colorMuted  = lipgloss.AdaptiveColor{Light: "243", Dark: "246"}
-	colorRed    = lipgloss.AdaptiveColor{Light: "160", Dark: "203"}
-	selectedBg  = lipgloss.AdaptiveColor{Light: "189", Dark: "17"}
-	selectedFg  = lipgloss.AdaptiveColor{Light: "16", Dark: "255"}
-	colorBlue   = lipgloss.AdaptiveColor{Light: "25", Dark: "33"}
+	colorGreen = lipgloss.AdaptiveColor{Light: "28", Dark: "42"}
+	colorAmber = lipgloss.AdaptiveColor{Light: "214", Dark: "220"}
+	colorMuted = lipgloss.AdaptiveColor{Light: "243", Dark: "246"}
+	colorRed   = lipgloss.AdaptiveColor{Light: "160", Dark: "203"}
+	selectedBg = lipgloss.AdaptiveColor{Light: "189", Dark: "17"}
+	selectedFg = lipgloss.AdaptiveColor{Light: "16", Dark: "255"}
+	colorBlue  = lipgloss.AdaptiveColor{Light: "25", Dark: "33"}
 )
 
 var (
@@ -36,13 +36,13 @@ var (
 	selectedStyle = lipgloss.NewStyle().
 			Background(selectedBg).Foreground(selectedFg).Padding(0, 1)
 
-	normalStyle   = lipgloss.NewStyle().Padding(0, 1)
-	mutedStyle    = lipgloss.NewStyle().Foreground(colorMuted)
-	amberStyle    = lipgloss.NewStyle().Foreground(colorAmber).Bold(true)
-	greenStyle    = lipgloss.NewStyle().Foreground(colorGreen)
-	redStyle      = lipgloss.NewStyle().Foreground(colorRed).Bold(true)
-	helpStyle     = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
-	statusStyle   = lipgloss.NewStyle().Foreground(colorMuted).Padding(0, 1)
+	normalStyle = lipgloss.NewStyle().Padding(0, 1)
+	mutedStyle  = lipgloss.NewStyle().Foreground(colorMuted)
+	amberStyle  = lipgloss.NewStyle().Foreground(colorAmber).Bold(true)
+	greenStyle  = lipgloss.NewStyle().Foreground(colorGreen)
+	redStyle    = lipgloss.NewStyle().Foreground(colorRed).Bold(true)
+	helpStyle   = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
+	statusStyle = lipgloss.NewStyle().Foreground(colorMuted).Padding(0, 1)
 
 	panelStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -79,6 +79,14 @@ type (
 	aiChunkMsg struct{ chunk string }
 	aiDoneMsg  struct{ full string }
 	aiErrMsg   struct{ err error }
+
+	todaySummaryMsg struct {
+		commits  int
+		tasks    int
+		events   int
+		duration time.Duration
+	}
+	animTickMsg struct{}
 )
 
 // ── Model ─────────────────────────────────────────────────────────────────────
@@ -113,12 +121,15 @@ type Model struct {
 	detailScrl int
 
 	// editor
-	editorEntry  *models.Entry
-	ta           textarea.Model
-	editorDirty  bool
-	lastSaved    time.Time
-	savedFlash   bool
-	centeredMode bool
+	editorEntry     *models.Entry
+	ta              textarea.Model
+	editorDirty     bool
+	lastSaved       time.Time
+	savedFlash      bool
+	centeredMode    bool
+	wordGoal        int
+	vimNormal       bool
+	aiBeforeContent string
 
 	// AI streaming
 	aiGenerating bool
@@ -128,6 +139,16 @@ type Model struct {
 	// repos
 	repos      []models.Repo
 	repoCursor int
+
+	// today summary (loaded async after repos)
+	todayCommits  int
+	todayTasks    int
+	todayEvents   int
+	todayDuration time.Duration
+	todayLoaded   bool
+
+	// animation tick counter
+	tickCount int
 }
 
 func newTextarea() textarea.Model {
@@ -135,7 +156,6 @@ func newTextarea() textarea.Model {
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
 	ta.Placeholder = ""
-	// Remove default keybindings styling so it blends with our theme.
 	ta.FocusedStyle.Base = lipgloss.NewStyle()
 	ta.BlurredStyle.Base = lipgloss.NewStyle()
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
@@ -146,15 +166,16 @@ func newTextarea() textarea.Model {
 
 func New(s *store.Store) *Model {
 	return &Model{
-		store: s,
-		ta:    newTextarea(),
+		store:    s,
+		ta:       newTextarea(),
+		wordGoal: 250,
 	}
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(cmdLoadEntries(m.store), cmdLoadRepos(m.store))
+	return tea.Batch(cmdLoadEntries(m.store), cmdLoadRepos(m.store), cmdAnimTick())
 }
 
 func cmdLoadEntries(s *store.Store) tea.Cmd {
@@ -174,6 +195,27 @@ func cmdLoadRepos(s *store.Store) tea.Cmd {
 			return errMsg{err}
 		}
 		return reposLoadedMsg{repos}
+	}
+}
+
+// cmdLoadTodaySummary reads git commits + suite data for today asynchronously.
+func cmdLoadTodaySummary(s *store.Store) tea.Cmd {
+	return func() tea.Msg {
+		repos, err := s.ListRepos()
+		if err != nil {
+			return todaySummaryMsg{}
+		}
+		today := time.Now()
+		ds, _ := git.DayStats(repos, today)
+		tasks, _ := suite.TodayTasks()
+		events, _ := suite.TodayEvents()
+		times, _ := suite.TodayTimeEntries()
+		return todaySummaryMsg{
+			commits:  len(ds.Commits),
+			tasks:    len(tasks),
+			events:   len(events),
+			duration: suite.TotalDuration(times),
+		}
 	}
 }
 
@@ -213,6 +255,12 @@ func cmdAutoSaveTick() tea.Cmd {
 	})
 }
 
+func cmdAnimTick() tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
+		return animTickMsg{}
+	})
+}
+
 func waitForAI(ch chan ai.StreamResult) tea.Cmd {
 	return func() tea.Msg {
 		r := <-ch
@@ -247,7 +295,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case reposLoadedMsg:
 		m.repos = msg.repos
+		return m, cmdLoadTodaySummary(m.store)
+
+	case todaySummaryMsg:
+		m.todayCommits = msg.commits
+		m.todayTasks = msg.tasks
+		m.todayEvents = msg.events
+		m.todayDuration = msg.duration
+		m.todayLoaded = true
 		return m, nil
+
+	case animTickMsg:
+		m.tickCount++
+		return m, cmdAnimTick()
 
 	case entryGenMsg:
 		if msg.err != nil {
@@ -270,10 +330,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case aiDoneMsg:
 		m.aiGenerating = false
 		if msg.full != "" {
+			before := countWords(m.aiBeforeContent)
+			after := countWords(msg.full)
 			m.ta.SetValue(msg.full)
 			m.editorDirty = true
+			m.flash(fmt.Sprintf("Claude wrote %d words (+%d) — review and ctrl+s to save", after, after-before))
+		} else {
+			m.flash("Claude finished — review and ctrl+s to save")
 		}
-		m.flash("Claude finished — review and ctrl+s to save")
 		return m, nil
 
 	case aiErrMsg:
@@ -302,7 +366,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Forward non-key messages to textarea when editing.
 	if m.view == editorView {
 		var cmd tea.Cmd
 		m.ta, cmd = m.ta.Update(msg)
@@ -315,7 +378,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // ── Key handlers ─────────────────────────────────────────────────────────────
 
 func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
-	// Delete confirm overlay.
 	if m.confirmDelete {
 		if msg.String() == "y" || msg.String() == "Y" {
 			_ = m.store.DeleteEntry(m.deleteDate)
@@ -330,7 +392,6 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	// Search mode.
 	if m.searching {
 		switch msg.String() {
 		case "esc":
@@ -422,6 +483,53 @@ func (m *Model) handleDetail(msg tea.KeyMsg) tea.Cmd {
 }
 
 func (m *Model) handleEditor(msg tea.KeyMsg) tea.Cmd {
+	// Vim normal mode — intercept keys before passing to textarea.
+	if m.vimNormal {
+		switch msg.String() {
+		case "i", "a", "A", "o", "O":
+			m.vimNormal = false
+		case "h":
+			var cmd tea.Cmd
+			m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyLeft})
+			return cmd
+		case "l":
+			var cmd tea.Cmd
+			m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyRight})
+			return cmd
+		case "j":
+			var cmd tea.Cmd
+			m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyDown})
+			return cmd
+		case "k":
+			var cmd tea.Cmd
+			m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyUp})
+			return cmd
+		case "0":
+			var cmd tea.Cmd
+			m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyHome})
+			return cmd
+		case "$":
+			var cmd tea.Cmd
+			m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyEnd})
+			return cmd
+		case "ctrl+s":
+			m.save()
+			return cmdLoadEntries(m.store)
+		case "esc":
+			if m.editorDirty {
+				m.save()
+			}
+			m.view = listView
+			m.editorEntry = nil
+			m.vimNormal = false
+			m.ta.Blur()
+			return cmdLoadEntries(m.store)
+		default:
+			return nil // swallow all other keys in normal mode
+		}
+		return nil
+	}
+
 	switch msg.String() {
 	case "ctrl+s":
 		m.save()
@@ -436,12 +544,17 @@ func (m *Model) handleEditor(msg tea.KeyMsg) tea.Cmd {
 		m.ta.Blur()
 		return cmdLoadEntries(m.store)
 
+	case "ctrl+v":
+		m.vimNormal = true
+		return nil
+
 	case "a":
 		if m.aiGenerating {
 			return nil
 		}
 		m.aiGenerating = true
 		m.aiTokens = 0
+		m.aiBeforeContent = m.ta.Value()
 		m.aiChan = make(chan ai.StreamResult, 64)
 		body := m.ta.Value()
 		ch := m.aiChan
@@ -459,23 +572,17 @@ func (m *Model) handleEditor(msg tea.KeyMsg) tea.Cmd {
 		return nil
 
 	case "tab":
-		// Jump to next <!-- AI: --> block.
 		content := m.ta.Value()
 		line := m.ta.Line()
 		pos := lineToOffset(content, line)
 		if next := strings.Index(content[pos+1:], "<!-- AI:"); next >= 0 {
-			targetLine := offsetToLine(content, pos+1+next)
-			// Move cursor by pressing down until we reach target line.
-			_ = targetLine
-			// bubbles/textarea v1 doesn't expose GotoLine — fall through.
+			_ = offsetToLine(content, pos+1+next)
 		}
-		// Pass tab to textarea as normal.
 		var cmd tea.Cmd
 		m.ta, cmd = m.ta.Update(msg)
 		return cmd
 
 	case "[":
-		// Previous ## section.
 		content := m.ta.Value()
 		line := m.ta.Line()
 		pos := lineToOffset(content, line)
@@ -485,7 +592,6 @@ func (m *Model) handleEditor(msg tea.KeyMsg) tea.Cmd {
 		return nil
 
 	case "]":
-		// Next ## section.
 		content := m.ta.Value()
 		line := m.ta.Line()
 		pos := lineToOffset(content, line)
@@ -530,6 +636,7 @@ func (m *Model) openEditor(entry *models.Entry) tea.Cmd {
 	m.editorDirty = false
 	m.lastSaved = time.Now()
 	m.savedFlash = false
+	m.vimNormal = false
 	m.view = editorView
 	m.resizeEditor()
 	return tea.Batch(cmdAutoSaveTick(), m.ta.Focus())
@@ -644,8 +751,21 @@ func (m *Model) viewList() string {
 	if m.message != "" && time.Since(m.msgAt) < 5*time.Second {
 		msg = "  " + greenStyle.Render(m.message)
 	}
+
+	// Streak with pulsing animation for streaks > 7 days.
+	streakStr := amberStyle.Render(fmt.Sprintf("streak %dd", m.streak))
+	if m.streak > 7 {
+		var flame string
+		if m.tickCount%2 == 0 {
+			flame = amberStyle.Render("🔥 ")
+		} else {
+			flame = redStyle.Render("🔥 ")
+		}
+		streakStr = flame + streakStr
+	}
+
 	statusLine := statusStyle.Render(
-		amberStyle.Render(fmt.Sprintf("streak %dd", m.streak)) +
+		streakStr +
 			"  " + mutedStyle.Render(fmt.Sprintf("%d entries", len(m.entries))) +
 			msg,
 	)
@@ -668,6 +788,13 @@ func (m *Model) renderHeatmap() string {
 		}
 	}
 
+	// Current entry's date — highlight in heatmap.
+	selectedKey := ""
+	entries := m.visibleEntries()
+	if m.cursor >= 0 && m.cursor < len(entries) {
+		selectedKey = entries[m.cursor].Date.Format("2006-01-02")
+	}
+
 	days := make([]time.Time, 30)
 	for i := range days {
 		days[29-i] = today.AddDate(0, 0, -i)
@@ -678,7 +805,12 @@ func (m *Model) renderHeatmap() string {
 		cells[i] = "  "
 	}
 	for _, d := range days {
-		cells = append(cells, heatCell(commitMap[d.Format("2006-01-02")]))
+		key := d.Format("2006-01-02")
+		if key == selectedKey {
+			cells = append(cells, amberStyle.Bold(true).Render("█"))
+		} else {
+			cells = append(cells, heatCell(commitMap[key]))
+		}
 	}
 	for len(cells)%7 != 0 {
 		cells = append(cells, "  ")
@@ -691,6 +823,31 @@ func (m *Model) renderHeatmap() string {
 	for i := 0; i < len(cells); i += 7 {
 		lines = append(lines, strings.Join(cells[i:i+7], " "))
 	}
+
+	// Today summary loaded asynchronously after repos.
+	if m.todayLoaded {
+		lines = append(lines, "")
+		lines = append(lines, mutedStyle.Render("today"))
+		var parts []string
+		if m.todayCommits > 0 {
+			parts = append(parts, greenStyle.Render(fmt.Sprintf("%d commit%s", m.todayCommits, plural(m.todayCommits))))
+		}
+		if m.todayTasks > 0 {
+			parts = append(parts, fmt.Sprintf("%d task%s", m.todayTasks, plural(m.todayTasks)))
+		}
+		if m.todayEvents > 0 {
+			parts = append(parts, fmt.Sprintf("%d event%s", m.todayEvents, plural(m.todayEvents)))
+		}
+		if m.todayDuration > 0 {
+			parts = append(parts, formatDuration(m.todayDuration))
+		}
+		if len(parts) > 0 {
+			lines = append(lines, strings.Join(parts, " · "))
+		} else {
+			lines = append(lines, mutedStyle.Render("nothing yet"))
+		}
+	}
+
 	return strings.Join(lines, "\n")
 }
 
@@ -730,6 +887,14 @@ func (m *Model) renderEntryList(width, height int) string {
 		start = m.cursor - maxVis + 1
 	}
 
+	// rowW = content width available before adding the 1-space side padding.
+	// Layout per row: " " + "%-12s  " (14) + preview (maxP) + tag (0|5) + " " = width
+	// So: maxP = rowW - 14 - tagLen, and rowW = width - 2.
+	rowW := width - 2
+	if rowW < 10 {
+		rowW = 10
+	}
+
 	for i, e := range entries {
 		if i < start {
 			continue
@@ -738,23 +903,39 @@ func (m *Model) renderEntryList(width, height int) string {
 			break
 		}
 		dateStr := e.Date.Format("2006-01-02")
-		preview := firstLine(e.Body)
-		maxP := width - 15
+
+		tagPlain := ""
+		tagStyled := ""
+		if e.Generated {
+			tagPlain = " [AI]"
+			tagStyled = " " + greenStyle.Render("[AI]")
+		}
+
+		maxP := rowW - 14 - len(tagPlain)
 		if maxP < 0 {
 			maxP = 0
 		}
+		preview := firstLine(e.Body)
 		if len(preview) > maxP {
 			preview = preview[:maxP] + "…"
 		}
-		tag := ""
-		if e.Generated {
-			tag = greenStyle.Render(" [AI]")
-		}
-		line := fmt.Sprintf("%-12s %s%s", dateStr, preview, tag)
+
 		if i == m.cursor {
-			lines = append(lines, selectedStyle.Width(width).Render(line))
+			// selectedStyle.Width(rowW) + Padding(0,1) = rowW+2 = width. No overflow.
+			rowText := fmt.Sprintf("%-12s  %-*s%s", dateStr, maxP, preview, tagPlain)
+			lines = append(lines, selectedStyle.Width(rowW).Render(rowText))
 		} else {
-			lines = append(lines, normalStyle.Render(line))
+			// Build styled row without nesting ANSI inside fmt.Sprintf — avoids
+			// lipgloss width miscalculation on content with embedded escape codes.
+			var previewStyled string
+			if m.searchQuery != "" {
+				previewStyled = highlightMatch(preview, m.searchQuery)
+			} else {
+				previewStyled = mutedStyle.Render(preview)
+			}
+			// Manual Padding(0,1): one space on each side.
+			row := " " + fmt.Sprintf("%-12s  ", dateStr) + previewStyled + tagStyled + " "
+			lines = append(lines, row)
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -786,7 +967,8 @@ func (m *Model) viewDetail() string {
 	if start > len(bodyLines) {
 		start = len(bodyLines)
 	}
-	body := panelStyle.Width(w - 4).Render(strings.Join(bodyLines[start:end], "\n"))
+	rendered := renderMarkdown(strings.Join(bodyLines[start:end], "\n"))
+	body := panelStyle.Width(w - 4).Render(rendered)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
@@ -806,7 +988,6 @@ func (m *Model) viewEditor() string {
 	sec := currentSection(content, m.ta.Line())
 	aiBlocks := strings.Count(content, "<!-- AI:")
 
-	// Save indicator.
 	saveStr := ""
 	if m.savedFlash && time.Since(m.lastSaved) < 3*time.Second {
 		saveStr = "  " + greenStyle.Render("✓ saved")
@@ -822,13 +1003,27 @@ func (m *Model) viewEditor() string {
 	if sec != "" {
 		secStr = "  " + mutedStyle.Render("§"+sec)
 	}
-	statusLeft := statusStyle.Render(date + mutedStyle.Render(fmt.Sprintf("%dw", wc)) + secStr + saveStr)
+
+	// Word count progress bar toward wordGoal.
+	wcStr := wordProgress(wc, m.wordGoal, 8)
+
+	// Vim mode indicator.
+	modeStr := ""
+	if m.vimNormal {
+		modeStr = "  " + lipgloss.NewStyle().Foreground(colorBlue).Bold(true).Render("[N]")
+	}
+
+	statusLeft := statusStyle.Render(date + wcStr + secStr + saveStr + modeStr)
 
 	aKey := "a ask claude"
 	if m.aiGenerating {
 		aKey = "a writing…"
 	}
-	keysRight := mutedStyle.Render(fmt.Sprintf("ctrl+s save  %s  [ ] jump  ctrl+f focus  esc done", aKey))
+	vimHint := "ctrl+v vim"
+	if m.vimNormal {
+		vimHint = "i insert  hjkl move"
+	}
+	keysRight := mutedStyle.Render(fmt.Sprintf("ctrl+s save  %s  [ ] jump  ctrl+f focus  %s  esc done", aKey, vimHint))
 	gap := w - lipgloss.Width(statusLeft) - lipgloss.Width(keysRight)
 	if gap < 1 {
 		gap = 1
@@ -887,6 +1082,73 @@ func (m *Model) viewRepos() string {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// renderMarkdown colorizes markdown for the detail view.
+func renderMarkdown(s string) string {
+	var lines []string
+	for _, line := range strings.Split(s, "\n") {
+		switch {
+		case strings.HasPrefix(line, "## ") || strings.HasPrefix(line, "# "):
+			lines = append(lines, greenStyle.Bold(true).Render(line))
+		case strings.HasPrefix(line, "### "):
+			lines = append(lines, lipgloss.NewStyle().Foreground(colorGreen).Render(line))
+		case strings.HasPrefix(line, "<!-- AI:"):
+			lines = append(lines, amberStyle.Render(line))
+		case strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* "):
+			lines = append(lines, mutedStyle.Render("·")+" "+line[2:])
+		default:
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// wordProgress renders a progress bar + word count toward goal.
+func wordProgress(current, goal, barWidth int) string {
+	if goal <= 0 {
+		return mutedStyle.Render(fmt.Sprintf("%dw", current))
+	}
+	pct := float64(current) / float64(goal)
+	if pct > 1 {
+		pct = 1
+	}
+	filled := int(pct * float64(barWidth))
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+	col := colorMuted
+	if current >= goal {
+		col = colorGreen
+	}
+	barStr := lipgloss.NewStyle().Foreground(col).Render("[" + bar + "]")
+	return barStr + " " + mutedStyle.Render(fmt.Sprintf("%d/%dw", current, goal))
+}
+
+// highlightMatch returns s with the first occurrence of q rendered in amber,
+// surrounding text rendered muted.
+func highlightMatch(s, q string) string {
+	if q == "" {
+		return mutedStyle.Render(s)
+	}
+	lower := strings.ToLower(s)
+	lq := strings.ToLower(q)
+	idx := strings.Index(lower, lq)
+	if idx < 0 {
+		return mutedStyle.Render(s)
+	}
+	before := mutedStyle.Render(s[:idx])
+	match := amberStyle.Render(s[idx : idx+len(q)])
+	after := mutedStyle.Render(s[idx+len(q):])
+	return before + match + after
+}
+
+// formatDuration returns a compact human-readable duration like "4h 20m".
+func formatDuration(d time.Duration) string {
+	h := int(d.Hours())
+	mins := int(d.Minutes()) % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh %dm", h, mins)
+	}
+	return fmt.Sprintf("%dm", mins)
+}
 
 func firstLine(s string) string {
 	for _, line := range strings.Split(s, "\n") {

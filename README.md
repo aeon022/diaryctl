@@ -1,8 +1,8 @@
 # diaryctl
 
-A developer diary powered by git history. Part of the missionctl suite.
+Developer diary powered by git history and AI. Part of the [missionctl](https://missionctl.sh) suite.
 
-`diaryctl` reads your git commit history, generates structured diary entries with an AI-ready template, and provides an MCP server so Claude can write narrative reflections directly into your diary.
+Reads your commits, completed tasks, calendar events, and time logs. Generates a structured diary template. Press `a` in the editor and Claude writes the narrative — or let the daemon handle it automatically at end of day.
 
 ---
 
@@ -18,135 +18,122 @@ diaryctl init ~/code/myproject --name "My Project"
 # Generate today's entry
 diaryctl today
 
-# Open today's entry in your editor
-diaryctl today --open
-
-# Open the TUI
+# Open TUI (heatmap + editor)
 diaryctl
 ```
 
-### MCP Configuration (Claude Desktop / claude.json)
+### MCP (Claude Desktop)
 
 ```json
 {
   "mcpServers": {
-    "diaryctl": {
-      "command": "diaryctl",
-      "args": ["mcp"]
-    }
+    "diaryctl": { "command": "diaryctl", "args": ["mcp"] }
   }
 }
 ```
 
 ---
 
-## Cheatsheet
+## AI Integration
 
-### CLI
+Three ways to let Claude write the narrative:
 
-| Command | Description |
-|---|---|
-| `diaryctl` | Open TUI |
-| `diaryctl init [path] [--name NAME]` | Register a git repo |
-| `diaryctl repos` | List registered repos |
-| `diaryctl today [--open] [--json]` | Generate/show today's entry |
-| `diaryctl list [--limit 30] [--json]` | List past entries |
-| `diaryctl show [DATE]` | Show a specific entry (YYYY-MM-DD) |
-| `diaryctl stats [--days 30]` | Show productivity stats |
-| `diaryctl mcp` | Start MCP server on stdio |
+### 1 — In-TUI (press `a`)
+Open any entry in the editor and press `a`. Claude streams the narrative live into the `<!-- AI: -->` sections. Needs `ANTHROPIC_API_KEY` in your environment.
 
-### TUI Keys
+```
+export ANTHROPIC_API_KEY=sk-ant-...
+diaryctl          # open TUI → select entry → e → a
+```
 
-| Key | Action |
-|---|---|
-| `j` / `k` | Navigate entries |
-| `enter` | Open entry detail |
-| `n` | Generate today's entry |
-| `e` | Edit selected entry in $EDITOR |
-| `r` | Manage repos |
-| `v` | Stats view |
-| `/` | Search entries |
-| `q` | Quit |
+### 2 — Auto-daemon (fully hands-free)
+Installs a launchd job that runs at 17:30 every day. If `ANTHROPIC_API_KEY` is set, Claude writes the full entry automatically and sends a macOS notification.
 
-**Detail view:**
+```bash
+diaryctl daemon start              # daily at 17:30
+diaryctl daemon start --hour 18    # custom time
+diaryctl daemon stop
+diaryctl daemon status
+```
 
-| Key | Action |
-|---|---|
-| `j` / `k` | Scroll |
-| `e` | Edit in $EDITOR |
-| `esc` | Back to list |
+**With API key:** generates template → Claude writes → saves → notification "Entry is written"  
+**Without API key:** generates template → saves → notification "Open Claude Desktop to write"
+
+### 3 — MCP / Claude Desktop
+Say "write my diary for today" in Claude Desktop. Claude calls `get_today_stats`, writes the narrative, calls `write_diary_entry`. No API key needed in diaryctl — Claude Desktop handles it.
+
+### Suite Integration
+When other missionctl apps are installed, diaryctl automatically pulls in:
+- **taskctl** — completed tasks for today
+- **calctl** — calendar events for today
+- **timectl** — time log entries for today
+
+All three appear as sections in the diary template. Missing apps are silently skipped.
 
 ---
 
 ## CLI Reference
 
-### `diaryctl init [PATH] [--name NAME]`
-
-Register a git repository. PATH defaults to the current directory. Name defaults to the directory basename.
-
-```
-$ diaryctl init ~/code/myproject --name "My Project"
-✓ Registered: My Project (/Users/you/code/myproject)
-```
-
-### `diaryctl repos`
-
-List all registered repositories.
-
-### `diaryctl today [--open] [--json]`
-
-Generate today's diary entry from git history. If an entry already exists, print it.
-
-- `--open`: Open in `$EDITOR` after generating.
-- `--json`: Output as JSON.
-
-The entry template includes:
-- Stats (commits, files changed, lines, active window, streak)
-- Commit list grouped by repo
-- `<!-- AI: ... -->` comment prompting Claude to write the narrative
-- Reflection and Tomorrow sections
-
-### `diaryctl list [--limit 30] [--json]`
-
-List past entries (date, first line preview, has_content, source).
-
-### `diaryctl show [DATE]`
-
-Show a specific diary entry. DATE defaults to today (format: YYYY-MM-DD).
-
-### `diaryctl stats [--days 30]`
-
-Show productivity stats:
-- Streak (consecutive days with commits)
-- Total commits / files / lines in the period
-- Most active day of week and hour
-- Per-repo breakdown
-- Daily activity bar chart for last 14 days
-
-### `diaryctl mcp`
-
-Start the MCP server on stdio. Attach via Claude Desktop or any MCP client.
+| Command | Description |
+|---|---|
+| `diaryctl` | Open TUI |
+| `diaryctl init [PATH] [--name NAME]` | Register a git repo |
+| `diaryctl repos` | List registered repos |
+| `diaryctl today [--open] [--json]` | Generate/show today's entry |
+| `diaryctl list [--limit 30]` | List past entries |
+| `diaryctl show [DATE]` | Show entry (YYYY-MM-DD, default: today) |
+| `diaryctl stats [--days 30]` | Productivity stats + bar chart |
+| `diaryctl daemon start [--hour H] [--minute M]` | Install launchd daemon |
+| `diaryctl daemon stop` | Remove daemon |
+| `diaryctl daemon status` | Show daemon state |
+| `diaryctl mcp` | Start MCP server (stdio) |
 
 ---
 
-## TUI Guide
+## TUI Reference
 
-Run `diaryctl` without arguments to open the TUI.
+### List view
 
-**List view** (default):
-- Left panel: 30-day commit heatmap (block character grid, colored by commit density)
-- Right panel: entry list with date and preview
-- Status bar: current streak in amber, entry count
+```
+j / k          navigate entries
+enter          open detail view
+e              open in editor
+n              generate today's entry
+d              delete entry (y to confirm)
+/              search entries
+r              manage repos
+q              quit
+```
 
-**Detail view** (press `enter`):
-- Full entry rendered as plain text
-- Scroll with `j`/`k`
-- Edit with `e` (opens `$EDITOR`, saves on close)
-- Back with `esc`
+### Editor (press `e` from list or detail)
 
-**Repos view** (press `r`):
-- List registered repos
-- Delete with `d`
+```
+ctrl+s         save
+esc            save and back to list
+a              ask Claude to write the narrative (streams live)
+tab            jump to next <!-- AI: --> block
+[ / ]          jump to previous / next ## section
+ctrl+f         toggle centered writing mode (72-char column)
+```
+
+Status bar shows: date · word count · current section · save indicator · AI spinner while generating.
+
+### Detail view
+
+```
+j / k          scroll
+e              open in editor
+d              delete entry
+esc            back to list
+```
+
+### Repos view (press `r`)
+
+```
+j / k          navigate
+d              delete repo
+esc            back
+```
 
 ---
 
@@ -154,74 +141,44 @@ Run `diaryctl` without arguments to open the TUI.
 
 | Tool | Parameters | Description |
 |---|---|---|
-| `get_today_stats` | — | Git stats for today across all repos |
+| `get_today_stats` | — | Git commits, suite data (tasks, events, time) for today |
 | `get_diary_entry` | `date` (YYYY-MM-DD, optional) | Read diary entry for a date |
-| `write_diary_entry` | `date` (optional), `body` (required) | Save/overwrite diary entry (marks as AI-generated) |
-| `get_coding_stats` | `days` (default 7) | Aggregate stats for last N days |
-| `list_diary_entries` | `limit` (default 10) | List entries with date and 100-char preview |
+| `write_diary_entry` | `body`, `date` (optional) | Save / overwrite entry |
+| `get_coding_stats` | `days` (default 7) | Streak, commits, repo breakdown for N days |
+| `list_diary_entries` | `limit` (default 10) | List entries with preview |
 
 ---
 
-## AI Workflow Examples
+## Data
 
-With diaryctl connected as an MCP server, you can ask Claude:
-
-**Narrative diary entry:**
-> "Read my today stats and write a developer diary entry for today. Fill in the Context section of my diary."
-
-**Weekly summary:**
-> "What did I work on this week? Use get_coding_stats for the last 7 days and get_diary_entry for each day."
-
-**Reflection:**
-> "Based on my last 30 days of coding stats, what are my most productive patterns? When do I code best?"
-
-**Auto-write:**
-> "Get today's stats, write a narrative diary entry in my voice, and save it with write_diary_entry."
-
----
+```
+~/.local/share/diaryctl/diary.db     SQLite (WAL mode)
+~/.local/share/diaryctl/logs/        Daemon logs
+```
 
 ## Architecture
 
 ```
 diaryctl/
-├── main.go                        Entry point
 ├── cmd/
-│   ├── root.go                    Root cobra command (opens TUI by default)
-│   ├── init.go                    Register a git repo
-│   ├── repos.go                   List registered repos
-│   ├── today.go                   Generate today's entry
-│   ├── list.go                    List past entries
-│   ├── show.go                    Show a specific entry
-│   ├── stats.go                   Productivity stats
-│   └── mcp.go                     Start MCP server
+│   ├── root.go        TUI by default
+│   ├── today.go       Generate entry
+│   ├── daemon.go      launchd integration + AI auto-fill
+│   └── ...
 ├── internal/
+│   ├── ai/
+│   │   └── claude.go  Anthropic SDK — Fill() + Stream()
 │   ├── diary/
-│   │   └── builder.go             Shared entry body builder (git → markdown)
-│   ├── models/
-│   │   └── models.go              Entry, Repo, CommitStat, DayStats types
-│   ├── store/
-│   │   └── sqlite.go              SQLite store (WAL mode, ~/.local/share/diaryctl/)
+│   │   └── builder.go Template builder (git + suite → markdown)
+│   ├── suite/
+│   │   └── reader.go  Reads taskctl / calctl / timectl DBs
 │   ├── git/
-│   │   └── reader.go              git log/show parsing via os/exec
+│   │   └── reader.go  git log / shortstat parsing
 │   ├── tui/
-│   │   └── tui.go                 Bubbletea TUI (heatmap + entry list)
-│   └── mcpserver/
-│       └── server.go              MCP server (5 tools)
-├── go.mod
-├── setup.sh
-└── README.md
-
-Data: ~/.local/share/diaryctl/diary.db (SQLite, WAL mode)
-```
-
-### Data flow
-
-```
-git repos → git reader → DayStats → entry builder → markdown template
-                                                          ↓
-                                               SQLite (entries table)
-                                                          ↓
-                                              TUI / CLI / MCP server
-                                                          ↓
-                                              Claude (via MCP) → filled narrative
+│   │   └── tui.go     Bubbletea — heatmap, editor, AI streaming
+│   ├── mcpserver/
+│   │   └── server.go  5 MCP tools
+│   └── store/
+│       └── sqlite.go  SQLite CRUD
+└── main.go
 ```

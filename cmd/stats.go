@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"time"
+	"unicode"
 
 	"github.com/aeon022/diaryctl/internal/git"
 	"github.com/spf13/cobra"
@@ -126,6 +127,37 @@ var statsCmd = &cobra.Command{
 			fmt.Printf("  %-12s [%s] %d commits\n", dateStr, bar, dayCommits)
 		}
 
+		// Word count history.
+		entries, err := s.ListEntries(statsDays)
+		if err == nil && len(entries) > 0 {
+			entryMap := map[string]int{}
+			maxWC := 0
+			for _, e := range entries {
+				wc := wordCountStr(e.Body)
+				entryMap[e.Date.Format("2006-01-02")] = wc
+				if wc > maxWC {
+					maxWC = wc
+				}
+			}
+			if maxWC == 0 {
+				maxWC = 1
+			}
+
+			fmt.Println()
+			fmt.Println("  Word Count (last 14 days):")
+			fmt.Println("  " + repeatStr("─", 38))
+			for i := 13; i >= 0; i-- {
+				d := today.AddDate(0, 0, -i)
+				dateStr := d.Format("Mon 01/02")
+				wc := entryMap[d.Format("2006-01-02")]
+				bar := barStr(wc, maxWC, 20)
+				if wc == 0 {
+					bar = repeatStr("·", 20)
+				}
+				fmt.Printf("  %-12s [%s] %dw\n", dateStr, bar, wc)
+			}
+		}
+
 		fmt.Println()
 		return nil
 	},
@@ -141,6 +173,19 @@ func repeatStr(s string, n int) string {
 		result += s
 	}
 	return result
+}
+
+func wordCountStr(s string) int {
+	n, inWord := 0, false
+	for _, r := range s {
+		if unicode.IsSpace(r) {
+			inWord = false
+		} else if !inWord {
+			inWord = true
+			n++
+		}
+	}
+	return n
 }
 
 func barStr(count, max, width int) string {
