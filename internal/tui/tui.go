@@ -240,8 +240,9 @@ func cmdGenerateToday(s *store.Store) tea.Cmd {
 		tasks, _ := suite.TodayTasks()
 		events, _ := suite.TodayEvents()
 		times, _ := suite.TodayTimeEntries()
+		habits, _ := suite.TodayHabits()
 
-		body := diary.BuildEntryBody(ds, tasks, events, times)
+		body := diary.BuildEntryBody(ds, tasks, events, times, habits)
 		if err := s.SaveEntry(today, body, false); err != nil {
 			return entryGenMsg{err: err}
 		}

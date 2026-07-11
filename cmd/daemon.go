@@ -235,8 +235,9 @@ var daemonGenerateCmd = &cobra.Command{
 		tasks, _ := suite.TodayTasks()
 		events, _ := suite.TodayEvents()
 		times, _ := suite.TodayTimeEntries()
+		habits, _ := suite.TodayHabits()
 
-		body := diary.BuildEntryBody(ds, tasks, events, times)
+		body := diary.BuildEntryBody(ds, tasks, events, times, habits)
 
 		// If ANTHROPIC_API_KEY is set, let Claude write the narrative automatically.
 		notif := "Your diary template is ready. Open Claude Desktop to write the narrative."

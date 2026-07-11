@@ -174,6 +174,84 @@ func TotalDuration(entries []TimeEntry) time.Duration {
 	return total
 }
 
+// HabitStatus is a habit with today's check-in status and current streak.
+type HabitStatus struct {
+	Name         string
+	CheckedToday bool
+	Streak       int
+}
+
+// TodayHabits returns all habits with today's status from habctl's database.
+// Returns an empty slice (no error) if habctl is not installed.
+func TodayHabits() ([]HabitStatus, error) {
+	path, err := expandPath("~/.local/share/habctl/habits.db")
+	if err != nil {
+		return nil, nil
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
+	if err != nil {
+		return nil, nil
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`SELECT id, name FROM habits ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, nil
+	}
+	defer rows.Close()
+
+	type habit struct {
+		id   int64
+		name string
+	}
+	var habits []habit
+	for rows.Next() {
+		var h habit
+		if err := rows.Scan(&h.id, &h.name); err != nil {
+			continue
+		}
+		habits = append(habits, h)
+	}
+	_ = rows.Close()
+
+	today := time.Now().Format("2006-01-02")
+	var result []HabitStatus
+
+	for _, h := range habits {
+		var checked int
+		_ = db.QueryRow(
+			`SELECT COUNT(*) FROM checkins WHERE habit_id = ? AND date = ?`,
+			h.id, today,
+		).Scan(&checked)
+
+		// Compute streak: walk backwards from today.
+		streak := 0
+		for i := 0; ; i++ {
+			day := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
+			var c int
+			_ = db.QueryRow(
+				`SELECT COUNT(*) FROM checkins WHERE habit_id = ? AND date = ?`,
+				h.id, day,
+			).Scan(&c)
+			if c == 0 {
+				break
+			}
+			streak++
+		}
+
+		result = append(result, HabitStatus{
+			Name:         h.name,
+			CheckedToday: checked > 0,
+			Streak:       streak,
+		})
+	}
+	return result, nil
+}
+
 // expandPath replaces a leading ~ with the user's home directory.
 func expandPath(path string) (string, error) {
 	if len(path) > 0 && path[0] == '~' {

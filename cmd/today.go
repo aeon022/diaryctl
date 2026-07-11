@@ -67,8 +67,9 @@ If an entry already exists, it will be printed.`,
 			tasks, _ := suite.TodayTasks()
 			events, _ := suite.TodayEvents()
 			times, _ := suite.TodayTimeEntries()
+			habits, _ := suite.TodayHabits()
 
-			body := diary.BuildEntryBody(ds, tasks, events, times)
+			body := diary.BuildEntryBody(ds, tasks, events, times, habits)
 
 			if err := s.SaveEntry(today, body, false); err != nil {
 				return fmt.Errorf("saving entry: %w", err)

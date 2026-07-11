@@ -29,6 +29,7 @@ func BuildEntryBody(
 	tasks []suite.CompletedTask,
 	events []suite.CalendarEvent,
 	timeEntries []suite.TimeEntry,
+	habits []suite.HabitStatus,
 ) string {
 	var sb strings.Builder
 
@@ -77,6 +78,23 @@ func BuildEntryBody(
 				line += fmt.Sprintf("  [%s]", e.Project)
 			}
 			sb.WriteString(line + "\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	// --- Habits ---
+	if len(habits) > 0 {
+		sb.WriteString("## Habits\n")
+		for _, h := range habits {
+			if h.CheckedToday {
+				streakStr := ""
+				if h.Streak > 1 {
+					streakStr = fmt.Sprintf(" (streak: %d)", h.Streak)
+				}
+				sb.WriteString(fmt.Sprintf("- [x] %s%s\n", h.Name, streakStr))
+			} else {
+				sb.WriteString(fmt.Sprintf("- [ ] %s\n", h.Name))
+			}
 		}
 		sb.WriteString("\n")
 	}
