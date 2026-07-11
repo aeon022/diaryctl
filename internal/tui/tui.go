@@ -10,6 +10,7 @@ import (
 	"github.com/aeon022/diaryctl/internal/diary"
 	"github.com/aeon022/diaryctl/internal/git"
 	"github.com/aeon022/diaryctl/internal/models"
+	"github.com/aeon022/diaryctl/internal/notectl"
 	"github.com/aeon022/diaryctl/internal/store"
 	"github.com/aeon022/diaryctl/internal/suite"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -244,6 +245,7 @@ func cmdGenerateToday(s *store.Store) tea.Cmd {
 		if err := s.SaveEntry(today, body, false); err != nil {
 			return entryGenMsg{err: err}
 		}
+		_ = notectl.WriteBack(today, body)
 		entry, _ := s.GetEntry(today)
 		return entryGenMsg{entry: entry}
 	}
@@ -648,6 +650,7 @@ func (m *Model) save() {
 	}
 	body := m.ta.Value()
 	_ = m.store.SaveEntry(m.editorEntry.Date, body, m.editorEntry.Generated)
+	_ = notectl.WriteBack(m.editorEntry.Date, body)
 	m.editorDirty = false
 	m.lastSaved = time.Now()
 	m.savedFlash = true

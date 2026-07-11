@@ -10,6 +10,7 @@ import (
 	"github.com/aeon022/diaryctl/internal/diary"
 	"github.com/aeon022/diaryctl/internal/git"
 	"github.com/aeon022/diaryctl/internal/models"
+	"github.com/aeon022/diaryctl/internal/notectl"
 	"github.com/aeon022/diaryctl/internal/store"
 	"github.com/aeon022/diaryctl/internal/suite"
 	"github.com/spf13/cobra"
@@ -72,6 +73,7 @@ If an entry already exists, it will be printed.`,
 			if err := s.SaveEntry(today, body, false); err != nil {
 				return fmt.Errorf("saving entry: %w", err)
 			}
+			_ = notectl.WriteBack(today, body)
 
 			entry, err = s.GetEntry(today)
 			if err != nil {
@@ -141,6 +143,7 @@ func openEntryInEditor(s *store.Store, entry *models.Entry) error {
 	if err := s.SaveEntry(entry.Date, string(content), entry.Generated); err != nil {
 		return fmt.Errorf("saving edited entry: %w", err)
 	}
+	_ = notectl.WriteBack(entry.Date, string(content))
 	fmt.Println("Entry saved.")
 	return nil
 }

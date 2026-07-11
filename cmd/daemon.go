@@ -12,6 +12,7 @@ import (
 	"github.com/aeon022/diaryctl/internal/ai"
 	"github.com/aeon022/diaryctl/internal/diary"
 	"github.com/aeon022/diaryctl/internal/git"
+	"github.com/aeon022/diaryctl/internal/notectl"
 	"github.com/aeon022/diaryctl/internal/suite"
 	"github.com/spf13/cobra"
 )
@@ -250,6 +251,7 @@ var daemonGenerateCmd = &cobra.Command{
 		if err := s.SaveEntry(today, body, false); err != nil {
 			return fmt.Errorf("saving entry: %w", err)
 		}
+		_ = notectl.WriteBack(today, body)
 
 		fmt.Printf("✓ Diary entry saved for %s\n", today.Format("2006-01-02"))
 
