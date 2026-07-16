@@ -43,6 +43,7 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
     homepage: https://github.com/aeon022/diaryctl
+    license: MIT
     description: "Developer diary - reads git history, AI generates narrative entries"
     install: |
       bin.install "diaryctl"
