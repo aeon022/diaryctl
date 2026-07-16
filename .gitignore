@@ -2,3 +2,4 @@ diaryctl
 *.db
 *.db-shm
 *.db-wal
+dist/
