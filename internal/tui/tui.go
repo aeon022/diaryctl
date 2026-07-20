@@ -63,6 +63,7 @@ const (
 	detailView viewType = iota
 	editorView viewType = iota
 	repoView   viewType = iota
+	helpView   viewType = iota
 )
 
 // ── Messages ──────────────────────────────────────────────────────────────────
@@ -365,6 +366,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.handleEditor(msg)
 		case repoView:
 			return m, m.handleRepo(msg)
+		case helpView:
+			return m, m.handleHelp(msg)
 		}
 		return m, nil
 	}
@@ -453,8 +456,18 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 	case "/":
 		m.searching = true
 		m.searchQuery = ""
+	case "?":
+		m.view = helpView
 	case "q":
 		return tea.Quit
+	}
+	return nil
+}
+
+func (m *Model) handleHelp(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "q", "esc", "?":
+		m.view = listView
 	}
 	return nil
 }
@@ -719,9 +732,40 @@ func (m *Model) View() string {
 		return m.viewEditor()
 	case repoView:
 		return m.viewRepos()
+	case helpView:
+		return m.viewHelp()
 	default:
 		return m.viewList()
 	}
+}
+
+func (m *Model) viewHelp() string {
+	key := func(k string) string { return amberStyle.Render(fmt.Sprintf("%-9s", k)) }
+	row := func(k, desc string) string { return "  " + key(k) + mutedStyle.Render(desc) + "\n" }
+	section := func(t string) string { return "\n  " + titleStyle.Render(t) + "\n" }
+
+	var b strings.Builder
+	b.WriteString("\n  " + titleStyle.Render("diaryctl") + mutedStyle.Render(" — daily journal from the terminal") + "\n")
+	b.WriteString(section("Navigation"))
+	b.WriteString(row("j / k", "move down / up"))
+	b.WriteString(row("enter", "open entry"))
+	b.WriteString(row("/", "search entries (esc clears)"))
+	b.WriteString(row("r", "browse tracked git repos"))
+	b.WriteString(section("Entries"))
+	b.WriteString(row("n", "generate today's entry"))
+	b.WriteString(row("e", "edit entry"))
+	b.WriteString(row("d", "delete entry (asks to confirm)"))
+	b.WriteString(section("Editor"))
+	b.WriteString(row("ctrl+s", "save"))
+	b.WriteString(row("esc", "save (if dirty) and close"))
+	b.WriteString(row("a", "ask Claude to continue the entry"))
+	b.WriteString(row("ctrl+f", "toggle centered writing mode"))
+	b.WriteString(row("ctrl+v", "vim normal mode (hjkl, i/a/o to insert)"))
+	b.WriteString(row("tab / [ / ]", "jump to next AI marker / section"))
+	b.WriteString(section("Other"))
+	b.WriteString(row("?", "toggle this help"))
+	b.WriteString(row("q", "quit"))
+	return b.String()
 }
 
 func (m *Model) viewList() string {
@@ -743,7 +787,7 @@ func (m *Model) viewList() string {
 	right := panelStyle.Width(listW).Height(h - 6).Render(m.renderEntryList(listW, h-6))
 	top := lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 
-	helpText := "j/k navigate  enter open  n new  e edit  d delete  r repos  / search  q quit"
+	helpText := "j/k navigate  enter open  n new  e edit  d delete  r repos  / search  ? help  q quit"
 	if m.confirmDelete {
 		helpText = redStyle.Render(fmt.Sprintf(
 			"Delete %s? y = confirm, any other key = cancel",

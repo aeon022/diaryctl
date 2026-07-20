@@ -68,7 +68,12 @@ When other missionctl apps are installed, diaryctl automatically pulls in:
 - **calctl** — calendar events for today
 - **timectl** — time log entries for today
 
-All three appear as sections in the diary template. Missing apps are silently skipped.
+All three appear as sections in the diary template. diaryctl reads each sister app's
+SQLite database directly and read-only (`internal/suite`) — it never shells out to the
+other CLIs. If a sister database doesn't exist yet (app not installed, or `sync` never
+run), that section is simply omitted: no error, no crash, nothing to configure. Once
+the other app is installed and has synced data, its section appears automatically on
+the next entry generation.
 
 ---
 
