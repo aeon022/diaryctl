@@ -13,8 +13,10 @@ import (
 	"github.com/aeon022/diaryctl/internal/notectl"
 	"github.com/aeon022/diaryctl/internal/store"
 	"github.com/aeon022/diaryctl/internal/suite"
+	"github.com/aeon022/missionctl-core/overlay"
 	"github.com/aeon022/missionctl-core/theme"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -153,6 +155,11 @@ type Model struct {
 
 	// animation tick counter
 	tickCount int
+
+	// "?" transient help popup
+	helpVP   viewport.Model
+	helpPopW int
+	helpPopH int
 }
 
 func newTextarea() textarea.Model {
@@ -459,7 +466,7 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 		m.searching = true
 		m.searchQuery = ""
 	case "?":
-		m.view = helpView
+		m.openHelp()
 	case "q":
 		return tea.Quit
 	}
@@ -470,8 +477,11 @@ func (m *Model) handleHelp(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "q", "esc", "?":
 		m.view = listView
+		return nil
 	}
-	return nil
+	var cmd tea.Cmd
+	m.helpVP, cmd = m.helpVP.Update(msg)
+	return cmd
 }
 
 func (m *Model) handleDetail(msg tea.KeyMsg) tea.Cmd {
@@ -735,7 +745,10 @@ func (m *Model) View() string {
 	case repoView:
 		return m.viewRepos()
 	case helpView:
-		return m.viewHelp()
+		// "?" is only reachable from the main list, so the list is always
+		// the correct background to keep visible behind the popup. No
+		// enclosing border on the list view, so inset 0 is safe.
+		return overlay.Center(m.viewList(), m.renderHelpPopup(), m.width, m.height, 0)
 	default:
 		return m.viewList()
 	}
@@ -749,13 +762,12 @@ func (m *Model) renderHeader(section string) string {
 	return titleStyle.Render("diaryctl") + mutedStyle.Render("· "+section)
 }
 
-func (m *Model) viewHelp() string {
+func (m *Model) helpContent() string {
 	key := func(k string) string { return amberStyle.Render(fmt.Sprintf("%-9s", k)) }
 	row := func(k, desc string) string { return "  " + key(k) + mutedStyle.Render(desc) + "\n" }
 	section := func(t string) string { return "\n  " + titleStyle.Render(t) + "\n" }
 
 	var b strings.Builder
-	b.WriteString("\n  " + m.renderHeader("Help") + "\n")
 	b.WriteString(section("Navigation"))
 	b.WriteString(row("j / k", "move down / up"))
 	b.WriteString(row("enter", "open entry"))
@@ -776,6 +788,45 @@ func (m *Model) viewHelp() string {
 	b.WriteString(row("?", "toggle this help"))
 	b.WriteString(row("q", "quit"))
 	return b.String()
+}
+
+// openHelp sizes and populates the transient help popup (see
+// renderHelpPopup/overlay.Center) from the ACTUAL rendered background
+// height, not the terminal size.
+func (m *Model) openHelp() {
+	bgLines := strings.Split(m.viewList(), "\n")
+
+	safeH := max(6, len(bgLines))
+	popH := min(safeH, 22)
+	popW := min(70, m.width)
+	if popW < 40 {
+		popW = 40
+	}
+
+	vp := viewport.New(popW-6, popH-5) // border 1+1, padding(1,2) → 2 rows/4 cols; -1 row for footer
+	vp.SetContent(m.helpContent())
+
+	m.helpVP = vp
+	m.helpPopW = popW
+	m.helpPopH = popH
+	m.view = helpView
+}
+
+// renderHelpPopup renders the help viewport in a bordered box, meant to be
+// composited over the list view via overlay.Center rather than replacing
+// the whole screen — the list stays visible around it.
+func (m *Model) renderHelpPopup() string {
+	footer := "esc / ?  close"
+	if m.helpVP.TotalLineCount() > m.helpVP.Height {
+		footer = fmt.Sprintf("j/k scroll (%d%%)  ·  %s", int(m.helpVP.ScrollPercent()*100), footer)
+	}
+	body := m.helpVP.View() + "\n" + mutedStyle.Render(footer)
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorBlue).
+		Padding(1, 2).
+		Width(m.helpPopW).
+		Render(body)
 }
 
 func (m *Model) viewList() string {
