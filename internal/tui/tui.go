@@ -739,13 +739,21 @@ func (m *Model) View() string {
 	}
 }
 
+// renderHeader is the one header shared by every view: app name + current
+// section, so it stays a constant anchor no matter which screen is active.
+func (m *Model) renderHeader(section string) string {
+	// titleStyle already has Padding(0, 1), which supplies the leading
+	// and trailing space — don't double it up here.
+	return titleStyle.Render("diaryctl") + mutedStyle.Render("· "+section)
+}
+
 func (m *Model) viewHelp() string {
 	key := func(k string) string { return amberStyle.Render(fmt.Sprintf("%-9s", k)) }
 	row := func(k, desc string) string { return "  " + key(k) + mutedStyle.Render(desc) + "\n" }
 	section := func(t string) string { return "\n  " + titleStyle.Render(t) + "\n" }
 
 	var b strings.Builder
-	b.WriteString("\n  " + titleStyle.Render("diaryctl") + mutedStyle.Render(" — daily journal from the terminal") + "\n")
+	b.WriteString("\n  " + m.renderHeader("Help") + "\n")
 	b.WriteString(section("Navigation"))
 	b.WriteString(row("j / k", "move down / up"))
 	b.WriteString(row("enter", "open entry"))
@@ -819,7 +827,7 @@ func (m *Model) viewList() string {
 	)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
-		titleStyle.Render("diaryctl"),
+		m.renderHeader("Journal"),
 		top,
 		statusLine,
 		helpStyle.Render(helpText),
@@ -1001,7 +1009,7 @@ func (m *Model) viewDetail() string {
 		h = 24
 	}
 
-	header := titleStyle.Render(m.detail.Date.Format("2006-01-02"))
+	header := m.renderHeader("Entry") + "  " + amberStyle.Render(m.detail.Date.Format("2006-01-02"))
 	if m.detail.Generated {
 		header += " " + greenStyle.Render("[AI]")
 	}
@@ -1087,7 +1095,7 @@ func (m *Model) viewEditor() string {
 		aiHint = "  " + mutedStyle.Render(fmt.Sprintf("%d AI prompt%s · a to fill · tab to jump", aiBlocks, plural(aiBlocks)))
 	}
 	header := lipgloss.JoinHorizontal(lipgloss.Center,
-		titleStyle.Render("diaryctl — editor"),
+		m.renderHeader("Editor"),
 		aiHint,
 	)
 
@@ -1109,7 +1117,7 @@ func (m *Model) viewEditor() string {
 
 func (m *Model) viewRepos() string {
 	var lines []string
-	lines = append(lines, titleStyle.Render("Registered Repos"), "")
+	lines = append(lines, m.renderHeader("Repos"), "")
 	if len(m.repos) == 0 {
 		lines = append(lines,
 			mutedStyle.Render("No repos registered."),
