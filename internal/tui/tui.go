@@ -13,6 +13,7 @@ import (
 	"github.com/aeon022/diaryctl/internal/notectl"
 	"github.com/aeon022/diaryctl/internal/store"
 	"github.com/aeon022/diaryctl/internal/suite"
+	"github.com/aeon022/missionctl-core/theme"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -21,13 +22,14 @@ import (
 // ── Design system ─────────────────────────────────────────────────────────────
 
 var (
-	colorGreen = lipgloss.AdaptiveColor{Light: "28", Dark: "42"}
-	colorAmber = lipgloss.AdaptiveColor{Light: "214", Dark: "220"}
-	colorMuted = lipgloss.AdaptiveColor{Light: "243", Dark: "246"}
-	colorRed   = lipgloss.AdaptiveColor{Light: "160", Dark: "203"}
-	selectedBg = lipgloss.AdaptiveColor{Light: "189", Dark: "17"}
-	selectedFg = lipgloss.AdaptiveColor{Light: "16", Dark: "255"}
-	colorBlue  = lipgloss.AdaptiveColor{Light: "25", Dark: "33"}
+	// Shared across the suite via missionctl-core/theme.
+	colorGreen = theme.Green
+	colorAmber = theme.Amber
+	colorMuted = theme.Muted
+	colorRed   = theme.Red
+	selectedBg = theme.SelectedBg
+	selectedFg = theme.SelectedFg
+	colorBlue  = theme.Blue
 )
 
 var (
