@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/sahilm/fuzzy"
 )
 
 // ── Design system ─────────────────────────────────────────────────────────────
@@ -715,13 +716,28 @@ func (m *Model) filterEntries() {
 	q := strings.ToLower(m.searchQuery)
 	var res []models.Entry
 	for _, e := range m.entries {
-		if strings.Contains(strings.ToLower(e.Body), q) ||
-			strings.Contains(e.Date.Format("2006-01-02"), q) {
+		body := strings.ToLower(e.Body)
+		if strings.Contains(body, q) ||
+			strings.Contains(e.Date.Format("2006-01-02"), q) ||
+			bodyFuzzyMatches(body, q) {
 			res = append(res, e)
 		}
 	}
 	m.searchRes = res
 	m.cursor = 0
+}
+
+// bodyFuzzyMatches reports whether q fuzzy-matches any individual WORD in
+// body, added alongside (not instead of) the substring/phrase check above.
+// Fuzzy-matching the whole body as one subsequence would be nearly
+// meaningless for free-form journal text — almost any short query finds
+// SOME subsequence across a full paragraph, over-matching everything and
+// defeating the point of search. Matching per-word keeps fuzzy's typo/
+// abbreviation tolerance (e.g. "brekfst" still finds "breakfast") without
+// that over-matching, and without breaking multi-word phrase search, which
+// the substring check above still handles.
+func bodyFuzzyMatches(body, q string) bool {
+	return len(fuzzy.Find(q, strings.Fields(body))) > 0
 }
 
 func (m *Model) visibleEntries() []models.Entry {
