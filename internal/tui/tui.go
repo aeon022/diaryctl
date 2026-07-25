@@ -363,6 +363,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		return m, nil
 
+	case tea.MouseMsg:
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if m.view == listView && m.cursor > 0 {
+				m.cursor--
+			}
+		case tea.MouseButtonWheelDown:
+			if m.view == listView && m.cursor < len(m.visibleEntries())-1 {
+				m.cursor++
+			}
+		case tea.MouseButtonLeft:
+			if msg.Action != tea.MouseActionPress || m.view != listView {
+				return m, nil
+			}
+			if i := m.rowHitTest(msg.X, msg.Y); i >= 0 {
+				m.cursor = i
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
@@ -845,6 +865,11 @@ func (m *Model) renderHelpPopup() string {
 		Render(body)
 }
 
+// heatmapPanelW is the heatmap (left) panel's fixed outer width — shared
+// with rowHitTest so the entry list's screen X-offset can't drift from
+// what viewList actually renders.
+const heatmapPanelW = 32
+
 func (m *Model) viewList() string {
 	w, h := m.width, m.height
 	if w < 40 {
@@ -854,7 +879,7 @@ func (m *Model) viewList() string {
 		h = 24
 	}
 
-	heatW := 32
+	heatW := heatmapPanelW
 	listW := w - heatW - 6
 	if listW < 20 {
 		listW = 20
@@ -1064,6 +1089,43 @@ func (m *Model) renderEntryList(width, height int) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// rowHitTest returns the visibleEntries() index at screen position (x, y),
+// or -1 if the click missed. Mirrors viewList's w/h fallback and panel
+// sizing and renderEntryList's exact layout (1 title/search line, then
+// entries, scrolled via the same start := cursor-maxVis+1 window) so a
+// click lands on the entry it visually appears to be over. x must land
+// inside the entry list (right) panel, past the heatmap panel + gap.
+func (m *Model) rowHitTest(x, y int) int {
+	if x < heatmapPanelW+2 {
+		return -1
+	}
+	h := m.height
+	if h < 20 {
+		h = 24
+	}
+	panelHeight := h - 6
+
+	entries := m.visibleEntries()
+	if len(entries) == 0 {
+		return -1
+	}
+	maxVis := panelHeight - 3
+	start := 0
+	if m.cursor >= maxVis {
+		start = m.cursor - maxVis + 1
+	}
+
+	idx := y - 3
+	if idx < 0 {
+		return -1
+	}
+	i := start + idx
+	if i >= len(entries) || idx >= maxVis {
+		return -1
+	}
+	return i
 }
 
 func (m *Model) viewDetail() string {
