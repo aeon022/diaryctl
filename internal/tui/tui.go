@@ -41,6 +41,10 @@ var (
 
 	selectedStyle = lipgloss.NewStyle().
 			Background(selectedBg).Foreground(selectedFg).Padding(0, 1)
+	// hoverStyle matches selectedStyle's Padding(0, 1) so a hovered row
+	// renders at the same total width as a selected one (theme.Hover
+	// itself carries no padding, since that's context-specific).
+	hoverStyle = theme.Hover.Padding(0, 1)
 
 	normalStyle = lipgloss.NewStyle().Padding(0, 1)
 	mutedStyle  = lipgloss.NewStyle().Foreground(colorMuted)
@@ -111,8 +115,9 @@ type Model struct {
 	msgAt   time.Time
 
 	// list
-	entries []models.Entry
-	cursor  int
+	entries  []models.Entry
+	cursor   int
+	hoverRow int // visibleEntries() index under the mouse cursor, -1 when none
 
 	// search
 	searching   bool
@@ -181,6 +186,7 @@ func New(s *store.Store) *Model {
 		store:    s,
 		ta:       newTextarea(),
 		wordGoal: 250,
+		hoverRow: -1,
 	}
 }
 
@@ -379,6 +385,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if i := m.rowHitTest(msg.X, msg.Y); i >= 0 {
 				m.cursor = i
+			}
+		case tea.MouseButtonNone:
+			if msg.Action == tea.MouseActionMotion && m.view == listView {
+				m.hoverRow = m.rowHitTest(msg.X, msg.Y)
 			}
 		}
 		return m, nil
@@ -1070,11 +1080,16 @@ func (m *Model) renderEntryList(width, height int) string {
 			preview = preview[:maxP] + "…"
 		}
 
-		if i == m.cursor {
-			// selectedStyle.Width(rowW) + Padding(0,1) = rowW+2 = width. No overflow.
+		switch {
+		case i == m.cursor, i == m.hoverRow:
+			// selectedStyle/hoverStyle.Width(rowW) + Padding(0,1) = rowW+2 = width. No overflow.
 			rowText := fmt.Sprintf("%-12s  %-*s%s", dateStr, maxP, preview, tagPlain)
-			lines = append(lines, selectedStyle.Width(rowW).Render(rowText))
-		} else {
+			if i == m.cursor {
+				lines = append(lines, selectedStyle.Width(rowW).Render(rowText))
+			} else {
+				lines = append(lines, hoverStyle.Width(rowW).Render(rowText))
+			}
+		default:
 			// Build styled row without nesting ANSI inside fmt.Sprintf — avoids
 			// lipgloss width miscalculation on content with embedded escape codes.
 			var previewStyled string
@@ -1412,7 +1427,7 @@ func plural(n int) string {
 
 func Run(s *store.Store) error {
 	m := New(s)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseAllMotion())
 	_, err := p.Run()
 	return err
 }
