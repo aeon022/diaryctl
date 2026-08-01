@@ -29,7 +29,7 @@ func WriteBack(date time.Time, body string) error {
 
 func readVaultPath() (string, error) {
 	home, _ := os.UserHomeDir()
-	cfgPath := filepath.Join(home, ".config", "notectl", "config.yaml")
+	cfgPath := filepath.Join(home, ".config", "notectl", "notectl.yaml")
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		return "", nil // not installed

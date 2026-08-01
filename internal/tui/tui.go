@@ -292,6 +292,21 @@ func copyToClipboardCmd(text string) tea.Cmd {
 	}
 }
 
+// jumpToNoteCmd shells out to `notectl --open <path>` to jump straight to
+// the vault note for date, matching the "Diary/<date>.md" path notectl.
+// WriteBack (internal/notectl/writeback.go) uses. If notectl isn't
+// installed or the note was never written back, notectl just opens on its
+// normal list — same graceful-degradation as WriteBack's own silent skip.
+func jumpToNoteCmd(date time.Time) tea.Cmd {
+	relPath := "Diary/" + date.Format("2006-01-02") + ".md"
+	return tea.ExecProcess(exec.Command("notectl", "--open", relPath), func(err error) tea.Msg {
+		if err != nil {
+			return errMsg{err}
+		}
+		return nil
+	})
+}
+
 func cmdGenerateToday(s *store.Store) tea.Cmd {
 	return func() tea.Msg {
 		repos, err := s.ListRepos()
@@ -574,6 +589,10 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 			m.flash("Copied to clipboard")
 			return copyToClipboardCmd(entries[m.cursor].Date.Format("2006-01-02"))
 		}
+	case "g":
+		if len(entries) > 0 {
+			return jumpToNoteCmd(entries[m.cursor].Date)
+		}
 	case "u":
 		if m.lastDeleted != nil && time.Since(m.msgAt) < undoWindow {
 			e := m.lastDeleted
@@ -630,6 +649,10 @@ func (m *Model) handleDetail(msg tea.KeyMsg) tea.Cmd {
 	case "e":
 		if m.detail != nil {
 			return m.openEditor(m.detail)
+		}
+	case "g":
+		if m.detail != nil {
+			return jumpToNoteCmd(m.detail.Date)
 		}
 	case "d":
 		if m.detail != nil {
@@ -947,6 +970,7 @@ func (m *Model) helpContent() string {
 	b.WriteString(row("n", "generate today's entry"))
 	b.WriteString(row("e", "edit entry"))
 	b.WriteString(row("d", "delete entry (asks to confirm)"))
+	b.WriteString(row("g", "open corresponding note in notectl"))
 	b.WriteString(section("Editor"))
 	b.WriteString(row("ctrl+s", "save"))
 	b.WriteString(row("esc", "save (if dirty) and close"))
@@ -1031,7 +1055,7 @@ func (m *Model) viewList() string {
 	right := panelStyle.Width(listW).Height(h - 6).Render(m.renderEntryList(listW, h-6))
 	top := lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 
-	helpText := "j/k:navigate  enter:open  n:new  e:edit  d:delete  u:undo  y:copy  r:repos  /:search  ?:help  q:quit"
+	helpText := "j/k:navigate  enter:open  n:new  e:edit  d:delete  u:undo  y:copy  g:open note  r:repos  /:search  ?:help  q:quit"
 	if m.confirmDelete {
 		helpText = redStyle.Render(fmt.Sprintf(
 			"Delete %s? y = confirm, any other key = cancel",
@@ -1310,7 +1334,7 @@ func (m *Model) viewDetail() string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		body,
-		helpStyle.Render("j/k scroll  e edit  d delete  esc back"),
+		helpStyle.Render("j/k scroll  e edit  d delete  g open note  esc back"),
 	)
 }
 
