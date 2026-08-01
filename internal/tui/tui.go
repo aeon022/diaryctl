@@ -462,6 +462,23 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 
 	entries := m.visibleEntries()
 	switch msg.String() {
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		// jump to the nth visible (on-screen) entry — mirrors rowHitTest's
+		// own scroll-window math (maxVis/start) so a digit lands on the
+		// same entry a click at that position would.
+		n := int(msg.String()[0] - '0')
+		h := m.height
+		if h < 20 {
+			h = 24
+		}
+		maxVis := (h - 6) - 3
+		start := 0
+		if m.cursor >= maxVis {
+			start = m.cursor - maxVis + 1
+		}
+		if idx := start + n - 1; idx < len(entries) && n <= maxVis {
+			m.cursor = idx
+		}
 	case "j", "down":
 		if m.cursor < len(entries)-1 {
 			m.cursor++
