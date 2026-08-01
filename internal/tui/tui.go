@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 	"unicode"
@@ -234,6 +235,18 @@ func cmdLoadTodaySummary(s *store.Store) tea.Cmd {
 			events:   len(events),
 			duration: suite.TotalDuration(times),
 		}
+	}
+}
+
+// copyToClipboardCmd shells out to pbcopy — same approach taskctl/mailctl/
+// notectl/calctl/habctl/timectl use for their own "y" copy shortcuts, no
+// clipboard library needed.
+func copyToClipboardCmd(text string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("pbcopy")
+		cmd.Stdin = strings.NewReader(text)
+		_ = cmd.Run()
+		return nil
 	}
 }
 
@@ -498,6 +511,11 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 		if len(entries) > 0 {
 			e := entries[m.cursor]
 			return m.openEditor(&e)
+		}
+	case "y":
+		if len(entries) > 0 {
+			m.flash("Copied to clipboard")
+			return copyToClipboardCmd(entries[m.cursor].Date.Format("2006-01-02"))
 		}
 	case "n":
 		m.flash("Generating today's entry…")
@@ -916,7 +934,7 @@ func (m *Model) viewList() string {
 	right := panelStyle.Width(listW).Height(h - 6).Render(m.renderEntryList(listW, h-6))
 	top := lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 
-	helpText := "j/k:navigate  enter:open  n:new  e:edit  d:delete  r:repos  /:search  ?:help  q:quit"
+	helpText := "j/k:navigate  enter:open  n:new  e:edit  d:delete  y:copy  r:repos  /:search  ?:help  q:quit"
 	if m.confirmDelete {
 		helpText = redStyle.Render(fmt.Sprintf(
 			"Delete %s? y = confirm, any other key = cancel",
