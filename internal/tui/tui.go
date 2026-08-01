@@ -943,7 +943,7 @@ func (m *Model) viewList() string {
 	}
 
 	msg := ""
-	if m.message != "" && time.Since(m.msgAt) < 5*time.Second {
+	if m.message != "" && time.Since(m.msgAt) < 3*time.Second {
 		msg = "  " + greenStyle.Render(m.message)
 	}
 
