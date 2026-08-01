@@ -116,9 +116,11 @@ type Model struct {
 	msgAt   time.Time
 
 	// list
-	entries  []models.Entry
-	cursor   int
-	hoverRow int // visibleEntries() index under the mouse cursor, -1 when none
+	entries      []models.Entry
+	cursor       int
+	hoverRow     int // visibleEntries() index under the mouse cursor, -1 when none
+	lastClickRow int // visibleEntries() index of the previous left-click, -1 when none — double-click opens the entry detail, same window/pattern taskctl uses
+	lastClickAt  time.Time
 
 	// search
 	searching   bool
@@ -184,10 +186,11 @@ func newTextarea() textarea.Model {
 
 func New(s *store.Store) *Model {
 	return &Model{
-		store:    s,
-		ta:       newTextarea(),
-		wordGoal: 250,
-		hoverRow: -1,
+		store:        s,
+		ta:           newTextarea(),
+		wordGoal:     250,
+		hoverRow:     -1,
+		lastClickRow: -1,
 	}
 }
 
@@ -397,7 +400,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if i := m.rowHitTest(msg.X, msg.Y); i >= 0 {
+				now := time.Now()
+				if i == m.lastClickRow && now.Sub(m.lastClickAt) < doubleClickWindow {
+					m.cursor = i
+					m.lastClickRow = -1 // consumed, so a third click starts fresh
+					e := m.visibleEntries()[i]
+					m.detail = &e
+					m.detailScrl = 0
+					m.view = detailView
+					return m, nil
+				}
 				m.cursor = i
+				m.lastClickRow = i
+				m.lastClickAt = now
 			}
 		case tea.MouseButtonNone:
 			if msg.Action == tea.MouseActionMotion && m.view == listView {
@@ -914,6 +929,10 @@ func (m *Model) renderHelpPopup() string {
 // with rowHitTest so the entry list's screen X-offset can't drift from
 // what viewList actually renders.
 const heatmapPanelW = 32
+
+// doubleClickWindow opens the entry detail on a second click within this
+// window, same pattern and duration taskctl uses for its own double-click.
+const doubleClickWindow = 400 * time.Millisecond
 
 func (m *Model) viewList() string {
 	w, h := m.width, m.height
