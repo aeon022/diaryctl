@@ -899,7 +899,7 @@ func (m *Model) viewList() string {
 	right := panelStyle.Width(listW).Height(h - 6).Render(m.renderEntryList(listW, h-6))
 	top := lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 
-	helpText := "j/k navigate  enter open  n new  e edit  d delete  r repos  / search  ? help  q quit"
+	helpText := "j/k:navigate  enter:open  n:new  e:edit  d:delete  r:repos  /:search  ?:help  q:quit"
 	if m.confirmDelete {
 		helpText = redStyle.Render(fmt.Sprintf(
 			"Delete %s? y = confirm, any other key = cancel",
@@ -1036,8 +1036,7 @@ func (m *Model) renderEntryList(width, height int) string {
 
 	entries := m.visibleEntries()
 	if len(entries) == 0 {
-		lines = append(lines, "", mutedStyle.Render("No entries yet."),
-			mutedStyle.Render("Press n to generate today's entry."))
+		lines = append(lines, "", mutedStyle.Render("No entries yet — press n to generate today's entry."))
 		return strings.Join(lines, "\n")
 	}
 
