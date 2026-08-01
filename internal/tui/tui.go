@@ -130,6 +130,11 @@ type Model struct {
 	// delete confirm
 	confirmDelete bool
 	deleteDate    time.Time
+	deleteTarget  *models.Entry // full entry captured at "d" time, for undo
+
+	// undo: "u" within undoWindow of a delete restores the deleted entry —
+	// same pattern and window taskctl uses for its own delete-undo.
+	lastDeleted *models.Entry
 
 	// detail
 	detail     *models.Entry
@@ -152,8 +157,10 @@ type Model struct {
 	aiChan       chan ai.StreamResult
 
 	// repos
-	repos      []models.Repo
-	repoCursor int
+	repos             []models.Repo
+	repoCursor        int
+	confirmDeleteRepo bool         // "d" was pressed once, waiting on y/Y to confirm — this view had no confirm step before, unlike every other destructive action in the app
+	lastDeletedRepo   *models.Repo // undo: "u" within undoWindow restores it, same pattern as entry delete-undo
 
 	// today summary (loaded async after repos)
 	todayCommits  int
@@ -200,6 +207,22 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(cmdLoadEntries(m.store), cmdLoadRepos(m.store), cmdAnimTick())
 }
 
+// cmdRestoreEntry re-saves a deleted entry with its original date/body —
+// used by "u" within undoWindow of a delete. SaveEntry is an upsert keyed
+// by date, so this recreates the exact same entry.
+func cmdRestoreEntry(s *store.Store, e models.Entry) tea.Cmd {
+	return func() tea.Msg {
+		if err := s.SaveEntry(e.Date, e.Body, e.Generated); err != nil {
+			return errMsg{err}
+		}
+		entries, err := s.ListEntries(100)
+		if err != nil {
+			return errMsg{err}
+		}
+		return entriesLoadedMsg{entries}
+	}
+}
+
 func cmdLoadEntries(s *store.Store) tea.Cmd {
 	return func() tea.Msg {
 		entries, err := s.ListEntries(100)
@@ -207,6 +230,22 @@ func cmdLoadEntries(s *store.Store) tea.Cmd {
 			return errMsg{err}
 		}
 		return entriesLoadedMsg{entries}
+	}
+}
+
+// cmdRestoreRepo re-saves a deleted repo with its original path/name —
+// used by "u" within undoWindow of a delete. SaveRepo is an upsert keyed
+// by path, so this recreates the exact same registration.
+func cmdRestoreRepo(s *store.Store, r models.Repo) tea.Cmd {
+	return func() tea.Msg {
+		if err := s.SaveRepo(r.Path, r.Name); err != nil {
+			return errMsg{err}
+		}
+		repos, err := s.ListRepos()
+		if err != nil {
+			return errMsg{err}
+		}
+		return reposLoadedMsg{repos}
 	}
 }
 
@@ -455,7 +494,9 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 	if m.confirmDelete {
 		if msg.String() == "y" || msg.String() == "Y" {
 			_ = m.store.DeleteEntry(m.deleteDate)
-			m.flash("Deleted")
+			m.lastDeleted = m.deleteTarget
+			m.deleteTarget = nil
+			m.flash(fmt.Sprintf("Deleted %s — press u to undo", m.deleteDate.Format("2006-01-02")))
 			if m.cursor > 0 {
 				m.cursor--
 			}
@@ -463,6 +504,7 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 			return cmdLoadEntries(m.store)
 		}
 		m.confirmDelete = false
+		m.deleteTarget = nil
 		return nil
 	}
 
@@ -532,13 +574,22 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 			m.flash("Copied to clipboard")
 			return copyToClipboardCmd(entries[m.cursor].Date.Format("2006-01-02"))
 		}
+	case "u":
+		if m.lastDeleted != nil && time.Since(m.msgAt) < undoWindow {
+			e := m.lastDeleted
+			m.lastDeleted = nil
+			m.message = ""
+			return cmdRestoreEntry(m.store, *e)
+		}
 	case "n":
 		m.flash("Generating today's entry…")
 		return cmdGenerateToday(m.store)
 	case "d":
 		if len(entries) > 0 {
+			e := entries[m.cursor]
 			m.confirmDelete = true
-			m.deleteDate = entries[m.cursor].Date
+			m.deleteDate = e.Date
+			m.deleteTarget = &e
 		}
 	case "r":
 		m.view = repoView
@@ -584,6 +635,7 @@ func (m *Model) handleDetail(msg tea.KeyMsg) tea.Cmd {
 		if m.detail != nil {
 			m.confirmDelete = true
 			m.deleteDate = m.detail.Date
+			m.deleteTarget = m.detail
 			m.view = listView
 			m.detail = nil
 		}
@@ -717,6 +769,22 @@ func (m *Model) handleEditor(msg tea.KeyMsg) tea.Cmd {
 }
 
 func (m *Model) handleRepo(msg tea.KeyMsg) tea.Cmd {
+	if m.confirmDeleteRepo {
+		if msg.String() == "y" || msg.String() == "Y" {
+			r := m.repos[m.repoCursor]
+			_ = m.store.DeleteRepo(r.Path)
+			m.lastDeletedRepo = &r
+			m.flash(fmt.Sprintf("Deleted %s — press u to undo", r.Name))
+			m.confirmDeleteRepo = false
+			if m.repoCursor > 0 {
+				m.repoCursor--
+			}
+			return cmdLoadRepos(m.store)
+		}
+		m.confirmDeleteRepo = false
+		return nil
+	}
+
 	switch msg.String() {
 	case "esc", "q":
 		m.view = listView
@@ -730,8 +798,14 @@ func (m *Model) handleRepo(msg tea.KeyMsg) tea.Cmd {
 		}
 	case "d":
 		if len(m.repos) > 0 {
-			_ = m.store.DeleteRepo(m.repos[m.repoCursor].Path)
-			return cmdLoadRepos(m.store)
+			m.confirmDeleteRepo = true
+		}
+	case "u":
+		if m.lastDeletedRepo != nil && time.Since(m.msgAt) < undoWindow {
+			r := m.lastDeletedRepo
+			m.lastDeletedRepo = nil
+			m.message = ""
+			return cmdRestoreRepo(m.store, *r)
 		}
 	}
 	return nil
@@ -934,6 +1008,10 @@ const heatmapPanelW = 32
 // window, same pattern and duration taskctl uses for its own double-click.
 const doubleClickWindow = 400 * time.Millisecond
 
+// undoWindow is how long after a delete "u" still restores it — same
+// duration taskctl uses for its own delete-undo.
+const undoWindow = 5 * time.Second
+
 func (m *Model) viewList() string {
 	w, h := m.width, m.height
 	if w < 40 {
@@ -953,7 +1031,7 @@ func (m *Model) viewList() string {
 	right := panelStyle.Width(listW).Height(h - 6).Render(m.renderEntryList(listW, h-6))
 	top := lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 
-	helpText := "j/k:navigate  enter:open  n:new  e:edit  d:delete  y:copy  r:repos  /:search  ?:help  q:quit"
+	helpText := "j/k:navigate  enter:open  n:new  e:edit  d:delete  u:undo  y:copy  r:repos  /:search  ?:help  q:quit"
 	if m.confirmDelete {
 		helpText = redStyle.Render(fmt.Sprintf(
 			"Delete %s? y = confirm, any other key = cancel",
@@ -962,7 +1040,11 @@ func (m *Model) viewList() string {
 	}
 
 	msg := ""
-	if m.message != "" && time.Since(m.msgAt) < 3*time.Second {
+	flashDur := 3 * time.Second
+	if m.lastDeleted != nil {
+		flashDur = undoWindow
+	}
+	if m.message != "" && time.Since(m.msgAt) < flashDur {
 		msg = "  " + greenStyle.Render(m.message)
 	}
 
@@ -1332,7 +1414,18 @@ func (m *Model) viewRepos() string {
 			}
 		}
 	}
-	lines = append(lines, "", helpStyle.Render("j/k navigate  d delete  esc back"))
+	var footer string
+	switch {
+	case m.confirmDeleteRepo && len(m.repos) > 0:
+		footer = redStyle.Render(fmt.Sprintf(
+			"Delete %s? y = confirm, any other key = cancel", m.repos[m.repoCursor].Name,
+		))
+	case m.message != "" && time.Since(m.msgAt) < undoWindow:
+		footer = greenStyle.Render(m.message)
+	default:
+		footer = helpStyle.Render("j/k:navigate  d:delete  u:undo  esc:back")
+	}
+	lines = append(lines, "", footer)
 	return strings.Join(lines, "\n")
 }
 
