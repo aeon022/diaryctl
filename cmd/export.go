@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/aeon022/diaryctl/internal/render"
 	"github.com/aeon022/diaryctl/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -29,6 +30,8 @@ Examples:
   diaryctl export
   diaryctl export --date 2026-07-10
   diaryctl export --date 2026-07-10 --format post | postctl import -
+  diaryctl export --date 2026-07-10 --format html -o entry.html
+  diaryctl export --date 2026-07-10 --format pdf -o entry.pdf
   diaryctl export --year 2026 --format csv -o diary-2026.csv
   diaryctl export --year 2026 --format json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -64,6 +67,26 @@ Examples:
 		case "post":
 			fmt.Printf("---\ntitle: \"Diary %s\"\nplatform: twitter\nstatus: draft\ntags: [diary, development]\n---\n%s",
 				date.Format("2006-01-02"), entry.Body)
+		case "html", "pdf":
+			title := "Diary — " + date.Format("Jan 02, 2006")
+			blocks := render.ParseMarkdown(entry.Body)
+			out := exportOutput
+			if out == "" {
+				out = "diary-" + date.Format("2006-01-02") + "." + exportFormat
+			}
+			var data []byte
+			if exportFormat == "html" {
+				data = render.RenderHTML(title, blocks)
+			} else {
+				data, err = render.RenderPDF(title, blocks)
+				if err != nil {
+					return fmt.Errorf("rendering pdf: %w", err)
+				}
+			}
+			if err := os.WriteFile(out, data, 0o644); err != nil {
+				return fmt.Errorf("write %s: %w", out, err)
+			}
+			fmt.Fprintf(os.Stderr, "Wrote %s\n", out)
 		default: // "raw"
 			fmt.Print(entry.Body)
 		}
@@ -123,7 +146,7 @@ func exportYearRange(s *store.Store, year int) error {
 
 func init() {
 	exportCmd.Flags().StringVar(&exportDate, "date", "", "Date to export (YYYY-MM-DD, default: today)")
-	exportCmd.Flags().StringVar(&exportFormat, "format", "raw", "Output format: raw|post (single entry) or csv|json (with --year)")
+	exportCmd.Flags().StringVar(&exportFormat, "format", "raw", "Output format: raw|post|html|pdf (single entry) or csv|json (with --year)")
 	exportCmd.Flags().IntVar(&exportYear, "year", 0, "Export every entry in this year instead of a single date")
 	exportCmd.Flags().StringVarP(&exportOutput, "output", "o", "", "Output file for --year export (default: stdout)")
 	rootCmd.AddCommand(exportCmd)

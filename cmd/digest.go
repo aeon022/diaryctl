@@ -6,12 +6,14 @@ import (
 	"strings"
 
 	"github.com/aeon022/diaryctl/internal/git"
+	"github.com/aeon022/diaryctl/internal/render"
 	"github.com/spf13/cobra"
 )
 
 var (
 	digestDays   int
 	digestOutput string
+	digestFormat string
 )
 
 var digestCmd = &cobra.Command{
@@ -20,7 +22,9 @@ var digestCmd = &cobra.Command{
 	Long: `Aggregate the last N days (7 by default) into one Markdown digest:
 commit stats per day plus each day's diary entry, if one exists.`,
 	Example: `  diaryctl digest
-  diaryctl digest --days 30 -o august.md`,
+  diaryctl digest --days 30 -o august.md
+  diaryctl digest --days 30 --format html -o august.html
+  diaryctl digest --days 30 --format pdf -o august.pdf`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		s, err := openStore()
 		if err != nil {
@@ -100,6 +104,34 @@ commit stats per day plus each day's diary entry, if one exists.`,
 		b.WriteString("---\n\n")
 		b.WriteString(days.String())
 
+		if digestFormat == "html" || digestFormat == "pdf" {
+			title := "Digest"
+			if len(dayStats) > 0 {
+				from := dayStats[len(dayStats)-1].Date.Format("Jan 02")
+				to := dayStats[0].Date.Format("Jan 02, 2006")
+				title = "Digest — " + from + " – " + to
+			}
+			blocks := render.ParseMarkdown(b.String())
+			var data []byte
+			if digestFormat == "html" {
+				data = render.RenderHTML(title, blocks)
+			} else {
+				data, err = render.RenderPDF(title, blocks)
+				if err != nil {
+					return fmt.Errorf("rendering pdf: %w", err)
+				}
+			}
+			out := digestOutput
+			if out == "" {
+				out = "digest." + digestFormat
+			}
+			if err := os.WriteFile(out, data, 0o644); err != nil {
+				return fmt.Errorf("write %s: %w", out, err)
+			}
+			fmt.Fprintf(os.Stderr, "Wrote digest → %s\n", out)
+			return nil
+		}
+
 		w := os.Stdout
 		if digestOutput != "" {
 			f, err := os.Create(digestOutput)
@@ -119,6 +151,7 @@ commit stats per day plus each day's diary entry, if one exists.`,
 
 func init() {
 	digestCmd.Flags().IntVar(&digestDays, "days", 7, "Number of days to include")
-	digestCmd.Flags().StringVarP(&digestOutput, "output", "o", "", "Output file (default: stdout)")
+	digestCmd.Flags().StringVarP(&digestOutput, "output", "o", "", "Output file (default: stdout for markdown, digest.<format> for html/pdf)")
+	digestCmd.Flags().StringVar(&digestFormat, "format", "markdown", "Output format: markdown|html|pdf")
 	rootCmd.AddCommand(digestCmd)
 }
