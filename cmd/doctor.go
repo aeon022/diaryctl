@@ -14,10 +14,11 @@ var doctorCmd = &cobra.Command{
 	Short: "Check database health",
 	Run: func(cmd *cobra.Command, args []string) {
 		var checks []doctor.Check
-		if path, err := store.DefaultDBPath(); err != nil {
+		if path, shared, err := store.ResolveDBPath(); err != nil {
 			checks = append(checks, doctor.Check{Label: "Database", OK: false, Detail: fmt.Sprintf("resolving path: %v", err)})
 		} else {
 			checks = append(checks, doctor.CheckSQLite("Database", path, "entries"))
+			checks = append(checks, doctor.CheckDataDir("Data directory", path, shared))
 		}
 		if !doctor.PrintReport(checks) {
 			os.Exit(1)

@@ -47,11 +47,11 @@ func init() {
 
 // openStore opens the default SQLite store.
 func openStore() (*store.Store, error) {
-	path, err := store.DefaultDBPath()
+	path, shared, err := store.ResolveDBPath()
 	if err != nil {
 		return nil, fmt.Errorf("finding data path: %w", err)
 	}
-	s, err := store.Open(path)
+	s, err := store.Open(path, shared)
 	if err != nil {
 		return nil, fmt.Errorf("opening store: %w", err)
 	}

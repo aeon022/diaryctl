@@ -3,11 +3,12 @@ module github.com/aeon022/diaryctl
 go 1.26.5
 
 require (
-	github.com/aeon022/missionctl-core v0.0.0-20260801195357-209b81f4515e
+	github.com/aeon022/missionctl-core v0.0.0-20260802150042-e2881ef3fdcf
 	github.com/anthropics/anthropic-sdk-go v1.56.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/mark3labs/mcp-go v0.32.0
 	github.com/sahilm/fuzzy v0.1.1
 	github.com/spf13/cobra v1.8.0
@@ -29,7 +30,6 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
-	github.com/go-pdf/fpdf v0.9.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
@@ -54,11 +54,9 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
-	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
-	golang.org/x/tools v0.47.0 // indirect
 	modernc.org/libc v1.74.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
