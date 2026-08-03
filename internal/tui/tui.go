@@ -14,6 +14,7 @@ import (
 	"github.com/aeon022/diaryctl/internal/notectl"
 	"github.com/aeon022/diaryctl/internal/store"
 	"github.com/aeon022/diaryctl/internal/suite"
+	"github.com/aeon022/missionctl-core/keymap"
 	"github.com/aeon022/missionctl-core/overlay"
 	"github.com/aeon022/missionctl-core/theme"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -956,32 +957,28 @@ func (m *Model) renderHeader(section string) string {
 }
 
 func (m *Model) helpContent() string {
-	key := func(k string) string { return amberStyle.Render(fmt.Sprintf("%-9s", k)) }
-	row := func(k, desc string) string { return "  " + key(k) + mutedStyle.Render(desc) + "\n" }
-	section := func(t string) string { return "\n  " + titleStyle.Render(t) + "\n" }
-
-	var b strings.Builder
-	b.WriteString(section("Navigation"))
-	b.WriteString(row("j / k", "move down / up"))
-	b.WriteString(row("enter", "open entry"))
-	b.WriteString(row("/", "search entries (esc clears)"))
-	b.WriteString(row("r", "browse tracked git repos"))
-	b.WriteString(section("Entries"))
-	b.WriteString(row("n", "generate today's entry"))
-	b.WriteString(row("e", "edit entry"))
-	b.WriteString(row("d", "delete entry (asks to confirm)"))
-	b.WriteString(row("g", "open corresponding note in notectl"))
-	b.WriteString(section("Editor"))
-	b.WriteString(row("ctrl+s", "save"))
-	b.WriteString(row("esc", "save (if dirty) and close"))
-	b.WriteString(row("a", "ask Claude to continue the entry"))
-	b.WriteString(row("ctrl+f", "toggle centered writing mode"))
-	b.WriteString(row("ctrl+v", "vim normal mode (hjkl, i/a/o to insert)"))
-	b.WriteString(row("tab / [ / ]", "jump to next AI marker / section"))
-	b.WriteString(section("Other"))
-	b.WriteString(row("?", "toggle this help"))
-	b.WriteString(row("q", "quit"))
-	return b.String()
+	return keymap.New("diaryctl", "developer diary from the terminal").
+		Section("Navigation").
+		Row("j / k", "move down / up").
+		Row("enter", "open entry").
+		Row("/", "search entries (esc clears)").
+		Row("r", "browse tracked git repos").
+		Section("Entries").
+		Row("n", "generate today's entry").
+		Row("e", "edit entry").
+		Row("d", "delete entry (asks to confirm)").
+		Row("g", "open corresponding note in notectl").
+		Section("Editor").
+		Row("ctrl+s", "save").
+		Row("esc", "save (if dirty) and close").
+		Row("a", "ask Claude to continue the entry").
+		Row("ctrl+f", "toggle centered writing mode").
+		Row("ctrl+v", "vim normal mode (hjkl, i/a/o to insert)").
+		Row("tab/[/]", "jump to next AI marker / section").
+		Section("Other").
+		Row("?", "toggle this help").
+		Row("q", "quit").
+		String()
 }
 
 // openHelp sizes and populates the transient help popup (see
