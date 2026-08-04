@@ -9,6 +9,7 @@ import (
 	"github.com/aeon022/missionctl-core/palette"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestLoadingSpinner_ShowsWhileLoadingThenEmptyStateOnceDone(t *testing.T) {
@@ -96,6 +97,28 @@ func TestDetailScroll_ClampsAtEndOfContent(t *testing.T) {
 	view := m.viewDetail()
 	if !strings.Contains(view, "line") {
 		t.Errorf("expected the panel to still show real content after scrolling far past the end, got:\n%s", view)
+	}
+}
+
+func TestHeatLevel_Thresholds(t *testing.T) {
+	cases := map[int]int{0: 0, -1: 0, 1: 1, 2: 1, 3: 2, 5: 2, 6: 3, 9: 3, 10: 4, 100: 4}
+	for count, want := range cases {
+		if got := heatLevel(count); got != want {
+			t.Errorf("heatLevel(%d) = %d, want %d", count, got, want)
+		}
+	}
+}
+
+func TestRenderHeatmap_FitsPanelWidthAndShowsLegend(t *testing.T) {
+	m := &Model{width: 100, height: 30}
+	out := m.renderHeatmap()
+	if !strings.Contains(out, "10+") {
+		t.Error("expected the heatmap to include its color legend")
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if w := lipgloss.Width(line); w > heatmapPanelW-4 {
+			t.Errorf("heatmap line exceeds panel content width (%d): %q", heatmapPanelW-4, line)
+		}
 	}
 }
 

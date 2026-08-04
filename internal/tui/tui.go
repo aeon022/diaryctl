@@ -1228,6 +1228,36 @@ func (m *Model) viewList() string {
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
+// heatLevels is the shared 5-tier commit-count gradient, index 0 = none.
+var heatLevels = [5]lipgloss.Style{
+	mutedStyle,
+	lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#86efac", Dark: "#276749"}),
+	lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#4ade80", Dark: "#38a169"}),
+	lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#22c55e", Dark: "#48bb78"}),
+	lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#16a34a", Dark: "#68d391"}),
+}
+
+func heatLevel(cnt int) int {
+	switch {
+	case cnt <= 0:
+		return 0
+	case cnt <= 2:
+		return 1
+	case cnt <= 5:
+		return 2
+	case cnt <= 9:
+		return 3
+	default:
+		return 4
+	}
+}
+
+// renderHeatmap draws a GitHub-style contribution graph: weeks run
+// horizontally (one column each) with a row per weekday, so the covered
+// period scales with the panel's fixed width without growing taller —
+// unlike the old one-row-per-week layout, which needed a new line for
+// every 7 days and forced either a short window or a tall panel. Same
+// technique habctl's yearly heatmap already uses.
 func (m *Model) renderHeatmap() string {
 	today := time.Now()
 	commitMap := make(map[string]int)
@@ -1245,34 +1275,71 @@ func (m *Model) renderHeatmap() string {
 		selectedKey = entries[m.cursor].Date.Format("2006-01-02")
 	}
 
-	days := make([]time.Time, 30)
-	for i := range days {
-		days[29-i] = today.AddDate(0, 0, -i)
+	// Fit as many weeks as the panel's fixed content width allows: border(2)
+	// + padding(2) leaves heatmapPanelW-4 columns, minus a 2-char day-label
+	// gutter, 2 columns ("█ ") per week.
+	contentW := heatmapPanelW - 4
+	weeks := (contentW - 2) / 2
+	if weeks > 52 {
+		weeks = 52
+	}
+	if weeks < 4 {
+		weeks = 4
 	}
 
-	cells := make([]string, int(days[0].Weekday()))
-	for i := range cells {
-		cells[i] = "  "
-	}
-	for _, d := range days {
-		key := d.Format("2006-01-02")
-		if key == selectedKey {
-			cells = append(cells, amberStyle.Bold(true).Render("█"))
+	wd := int(today.Weekday())
+	daysFromMonday := (wd + 6) % 7
+	thisMonday := today.AddDate(0, 0, -daysFromMonday)
+	startDate := thisMonday.AddDate(0, 0, -(weeks-1)*7)
+
+	var monthLine strings.Builder
+	monthLine.WriteString("  ")
+	lastMonth := -1
+	for w := 0; w < weeks; w++ {
+		day := startDate.AddDate(0, 0, w*7)
+		mo := int(day.Month())
+		if mo != lastMonth {
+			monthLine.WriteString(mutedStyle.Render(day.Format("Jan")[:1]))
+			lastMonth = mo
 		} else {
-			cells = append(cells, heatCell(commitMap[key]))
+			monthLine.WriteString(" ")
 		}
-	}
-	for len(cells)%7 != 0 {
-		cells = append(cells, "  ")
+		monthLine.WriteString(" ")
 	}
 
+	dayLabels := []string{"M", "T", "W", "T", "F", "S", "S"}
 	var lines []string
-	lines = append(lines, mutedStyle.Render("last 30 days"))
-	lines = append(lines, "")
-	lines = append(lines, mutedStyle.Render("S M T W T F S"))
-	for i := 0; i < len(cells); i += 7 {
-		lines = append(lines, strings.Join(cells[i:i+7], " "))
+	lines = append(lines, mutedStyle.Render(fmt.Sprintf("last %d weeks", weeks)))
+	lines = append(lines, monthLine.String())
+	for d := 0; d < 7; d++ {
+		var row strings.Builder
+		row.WriteString(mutedStyle.Render(dayLabels[d]) + " ")
+		for w := 0; w < weeks; w++ {
+			day := startDate.AddDate(0, 0, w*7+d)
+			if day.After(today) {
+				row.WriteString("  ")
+				continue
+			}
+			key := day.Format("2006-01-02")
+			if key == selectedKey {
+				row.WriteString(amberStyle.Bold(true).Render("█") + " ")
+				continue
+			}
+			level := heatLevel(commitMap[key])
+			cell := "░"
+			if level > 0 {
+				cell = "█"
+			}
+			row.WriteString(heatLevels[level].Render(cell) + " ")
+		}
+		lines = append(lines, row.String())
 	}
+	lines = append(lines, "")
+	lines = append(lines, mutedStyle.Render("0 ")+
+		heatLevels[1].Render("█")+mutedStyle.Render(" 1-2 ")+
+		heatLevels[2].Render("█")+mutedStyle.Render(" 3-5 ")+
+		heatLevels[3].Render("█")+mutedStyle.Render(" 6-9 ")+
+		heatLevels[4].Render("█")+mutedStyle.Render(" 10+"))
 
 	return strings.Join(lines, "\n")
 }
@@ -1340,20 +1407,6 @@ func (m *Model) renderRecentEntries(width int) string {
 		lines = append(lines, " "+amberStyle.Render(fmt.Sprintf("%-12s", dateStr))+"  "+mutedStyle.Render(preview)+tag)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func heatCell(count int) string {
-	b := "█"
-	switch {
-	case count == 0:
-		return mutedStyle.Render(b)
-	case count <= 2:
-		return lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "71", Dark: "22"}).Render(b)
-	case count <= 5:
-		return greenStyle.Render(b)
-	default:
-		return greenStyle.Bold(true).Render(b)
-	}
 }
 
 func (m *Model) renderEntryList(width, height int) string {
