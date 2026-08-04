@@ -16,6 +16,7 @@ import (
 	"github.com/aeon022/diaryctl/internal/suite"
 	"github.com/aeon022/missionctl-core/keymap"
 	"github.com/aeon022/missionctl-core/overlay"
+	"github.com/aeon022/missionctl-core/palette"
 	"github.com/aeon022/missionctl-core/theme"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -128,6 +129,11 @@ type Model struct {
 	searchQuery string
 	searchRes   []models.Entry
 
+	// ":" command palette
+	inPalette     bool
+	paletteQuery  string
+	paletteCursor int
+
 	// delete confirm
 	confirmDelete bool
 	deleteDate    time.Time
@@ -190,6 +196,28 @@ func newTextarea() textarea.Model {
 	ta.FocusedStyle.Prompt = lipgloss.NewStyle()
 	ta.BlurredStyle.Prompt = lipgloss.NewStyle()
 	return ta
+}
+
+// ── command palette (":") ────────────────────────────────────────────────────
+//
+// Types out full words instead of memorizing single-key shortcuts. Reuses
+// the exact same key handling every shortcut already goes through
+// (handleList) by replaying the mapped keypress, so behavior is guaranteed
+// identical to typing the key directly. Matching logic lives in
+// missionctl-core/palette (shared across the suite); this list is
+// diaryctl-specific.
+var paletteCommands = []palette.Command{
+	{Name: "new", Desc: "Generate today's entry", Key: "n"},
+	{Name: "edit", Desc: "Edit entry", Key: "e"},
+	{Name: "delete", Desc: "Delete entry (asks to confirm)", Key: "d"},
+	{Name: "open", Desc: "Open entry", Key: "enter"},
+	{Name: "copy", Desc: "Copy title to clipboard", Key: "y"},
+	{Name: "undo", Desc: "Undo last delete", Key: "u"},
+	{Name: "goto", Desc: "Open corresponding note in notectl", Key: "g"},
+	{Name: "repos", Desc: "Browse tracked git repos", Key: "r"},
+	{Name: "search", Desc: "Search entries", Key: "/"},
+	{Name: "help", Desc: "Show help", Key: "?"},
+	{Name: "quit", Desc: "Quit diaryctl", Key: "q"},
 }
 
 func New(s *store.Store) *Model {
@@ -524,6 +552,51 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
+	if m.inPalette {
+		switch msg.String() {
+		case "esc":
+			m.inPalette = false
+			m.paletteQuery = ""
+			m.paletteCursor = 0
+		case "up", "ctrl+p":
+			if m.paletteCursor > 0 {
+				m.paletteCursor--
+			}
+		case "down", "ctrl+n":
+			matches := palette.Match(paletteCommands, m.paletteQuery)
+			if m.paletteCursor < len(matches)-1 {
+				m.paletteCursor++
+			}
+		case "enter":
+			matches := palette.Match(paletteCommands, m.paletteQuery)
+			m.inPalette = false
+			m.paletteQuery = ""
+			if len(matches) == 0 {
+				m.paletteCursor = 0
+				return nil
+			}
+			if m.paletteCursor >= len(matches) {
+				m.paletteCursor = len(matches) - 1
+			}
+			chosen := matches[m.paletteCursor]
+			m.paletteCursor = 0
+			replay := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(chosen.Key)}
+			if chosen.Key == "enter" {
+				replay = tea.KeyMsg{Type: tea.KeyEnter}
+			}
+			return m.handleList(replay)
+		case "backspace":
+			if len(m.paletteQuery) > 0 {
+				m.paletteQuery = m.paletteQuery[:len(m.paletteQuery)-1]
+			}
+		default:
+			if len(msg.String()) == 1 {
+				m.paletteQuery += msg.String()
+			}
+		}
+		return nil
+	}
+
 	if m.searching {
 		switch msg.String() {
 		case "esc":
@@ -614,6 +687,10 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 	case "r":
 		m.view = repoView
 		m.repoCursor = 0
+	case ":":
+		m.inPalette = true
+		m.paletteQuery = ""
+		m.paletteCursor = 0
 	case "/":
 		m.searching = true
 		m.searchQuery = ""
@@ -962,6 +1039,7 @@ func (m *Model) helpContent() string {
 		Row("j / k", "move down / up").
 		Row("enter", "open entry").
 		Row("/", "search entries (esc clears)").
+		Row(":", "command palette — type an action by name").
 		Row("r", "browse tracked git repos").
 		Section("Entries").
 		Row("n", "generate today's entry").
@@ -1185,7 +1263,26 @@ func heatCell(count int) string {
 func (m *Model) renderEntryList(width, height int) string {
 	var lines []string
 
-	if m.searching {
+	paletteLines := 0
+	if m.inPalette {
+		lines = append(lines, amberStyle.Render(": "+m.paletteQuery+"_"))
+		matches := palette.Match(paletteCommands, m.paletteQuery)
+		if len(matches) > 6 {
+			matches = matches[:6]
+		}
+		if len(matches) == 0 {
+			lines = append(lines, mutedStyle.Render("  no matching command"))
+		}
+		for i, c := range matches {
+			row := fmt.Sprintf("%-9s %s", c.Name, c.Desc)
+			if i == m.paletteCursor {
+				lines = append(lines, greenStyle.Render("▶ "+row))
+			} else {
+				lines = append(lines, mutedStyle.Render("  "+row))
+			}
+		}
+		paletteLines = len(lines) - 1 // extra lines beyond the usual single title/search line "-3" already budgets for
+	} else if m.searching {
 		lines = append(lines, amberStyle.Render("/"+m.searchQuery+"_"))
 	} else {
 		lines = append(lines, titleStyle.Render("Entries"))
@@ -1197,7 +1294,7 @@ func (m *Model) renderEntryList(width, height int) string {
 		return strings.Join(lines, "\n")
 	}
 
-	maxVis := height - 3
+	maxVis := height - 3 - paletteLines
 	start := 0
 	if m.cursor >= maxVis {
 		start = m.cursor - maxVis + 1

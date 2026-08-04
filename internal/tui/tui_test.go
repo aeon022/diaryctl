@@ -6,8 +6,44 @@ import (
 	"time"
 
 	"github.com/aeon022/diaryctl/internal/models"
+	"github.com/aeon022/missionctl-core/palette"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+func TestCommandPalette_TypeFilterAndExecute(t *testing.T) {
+	m := &Model{width: 100, height: 30}
+
+	m.handleList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	if !m.inPalette {
+		t.Fatal("expected inPalette after ':'")
+	}
+
+	for _, r := range "rep" {
+		m.handleList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	matches := palette.Match(paletteCommands, m.paletteQuery)
+	if len(matches) == 0 || matches[0].Name != "repos" {
+		t.Fatalf("expected 'repos' to be the top match for query %q, got %v", m.paletteQuery, matches)
+	}
+
+	m.handleList(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.inPalette {
+		t.Error("expected palette to close after executing a command")
+	}
+	if m.view != repoView {
+		t.Errorf("expected 'repos' command to replay 'r' and open repoView, got %v", m.view)
+	}
+}
+
+func TestCommandPalette_EscCloses(t *testing.T) {
+	m := &Model{width: 100, height: 30}
+	m.handleList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+
+	m.handleList(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.inPalette {
+		t.Error("expected esc to close the palette")
+	}
+}
 
 func TestHelpOverlay_OpenScrollClose(t *testing.T) {
 	m := &Model{width: 100, height: 30}
