@@ -644,11 +644,7 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 		// own scroll-window math (maxVis/start) so a digit lands on the
 		// same entry a click at that position would.
 		n := int(msg.String()[0] - '0')
-		h := m.height
-		if h < 20 {
-			h = 24
-		}
-		maxVis := (h - 6) - 3
+		maxVis := m.panelHeight() - 3
 		start := 0
 		if m.cursor >= maxVis {
 			start = m.cursor - maxVis + 1
@@ -1152,6 +1148,18 @@ const doubleClickWindow = 400 * time.Millisecond
 // duration taskctl uses for its own delete-undo.
 const undoWindow = 5 * time.Second
 
+// panelHeight is the shared content-based height for the heatmap and
+// entries panels (they must match so the side-by-side boxes line up) —
+// used by both viewList (rendering) and rowHitTest (hit-testing), so they
+// can't drift apart on how tall the panels actually are.
+func (m *Model) panelHeight() int {
+	h := len(strings.Split(m.renderHeatmap(), "\n"))
+	if h < 8 {
+		h = 8
+	}
+	return h
+}
+
 func (m *Model) viewList() string {
 	w, h := m.width, m.height
 	if w < 40 {
@@ -1167,8 +1175,10 @@ func (m *Model) viewList() string {
 		listW = 20
 	}
 
-	left := panelStyle.Width(heatW).Height(h - 6).Render(m.renderHeatmap())
-	right := panelStyle.Width(listW).Height(h - 6).Render(m.renderEntryList(listW, h-6))
+	panelH := m.panelHeight()
+
+	left := panelStyle.Width(heatW).Height(panelH).Render(m.renderHeatmap())
+	right := panelStyle.Width(listW).Height(panelH).Render(m.renderEntryList(listW, panelH))
 	top := lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 
 	helpText := "j/k:navigate  enter:open  n:new  e:edit  d:delete  u:undo  y:copy  g:open note  r:repos  /:search  ?:help  q:quit"
@@ -1206,12 +1216,16 @@ func (m *Model) viewList() string {
 			msg,
 	)
 
-	return lipgloss.JoinVertical(lipgloss.Left,
-		m.renderHeader("Journal"),
-		top,
-		statusLine,
-		helpStyle.Render(helpText),
-	)
+	sections := []string{m.renderHeader("Journal"), "", top}
+	if today := m.renderTodayLine(); today != "" {
+		sections = append(sections, "", today)
+	}
+	if recent := m.renderRecentEntries(w); recent != "" {
+		sections = append(sections, "", recent)
+	}
+	sections = append(sections, "", statusLine, helpStyle.Render(helpText))
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func (m *Model) renderHeatmap() string {
@@ -1260,30 +1274,71 @@ func (m *Model) renderHeatmap() string {
 		lines = append(lines, strings.Join(cells[i:i+7], " "))
 	}
 
-	// Today summary loaded asynchronously after repos.
-	if m.todayLoaded {
-		lines = append(lines, "")
-		lines = append(lines, mutedStyle.Render("today"))
-		var parts []string
-		if m.todayCommits > 0 {
-			parts = append(parts, greenStyle.Render(fmt.Sprintf("%d commit%s", m.todayCommits, plural(m.todayCommits))))
-		}
-		if m.todayTasks > 0 {
-			parts = append(parts, fmt.Sprintf("%d task%s", m.todayTasks, plural(m.todayTasks)))
-		}
-		if m.todayEvents > 0 {
-			parts = append(parts, fmt.Sprintf("%d event%s", m.todayEvents, plural(m.todayEvents)))
-		}
-		if m.todayDuration > 0 {
-			parts = append(parts, formatDuration(m.todayDuration))
-		}
-		if len(parts) > 0 {
-			lines = append(lines, strings.Join(parts, " · "))
-		} else {
-			lines = append(lines, mutedStyle.Render("nothing yet"))
-		}
+	return strings.Join(lines, "\n")
+}
+
+// renderTodayLine is a standalone, prominent summary of today's suite
+// activity — pulled out of the heatmap panel (where it used to be tucked
+// away as a small aside) into its own full-width line.
+func (m *Model) renderTodayLine() string {
+	if !m.todayLoaded {
+		return ""
+	}
+	var parts []string
+	if m.todayCommits > 0 {
+		parts = append(parts, greenStyle.Render(fmt.Sprintf("%d commit%s", m.todayCommits, plural(m.todayCommits))))
+	}
+	if m.todayTasks > 0 {
+		parts = append(parts, fmt.Sprintf("%d task%s", m.todayTasks, plural(m.todayTasks)))
+	}
+	if m.todayEvents > 0 {
+		parts = append(parts, fmt.Sprintf("%d event%s", m.todayEvents, plural(m.todayEvents)))
+	}
+	if m.todayDuration > 0 {
+		parts = append(parts, formatDuration(m.todayDuration))
+	}
+	summary := mutedStyle.Render("nothing yet")
+	if len(parts) > 0 {
+		summary = strings.Join(parts, mutedStyle.Render(" · "))
+	}
+	return titleStyle.Render("Today") + "  " + summary
+}
+
+// renderRecentEntries is a compact, non-interactive digest of the most
+// recent entries — a glanceable "what have I written lately" separate from
+// the selectable entries panel (which now sizes to its own content instead
+// of stretching to fill the terminal, so it no longer doubles as a
+// look-at-a-glance summary the way the old full-height version did).
+func (m *Model) renderRecentEntries(width int) string {
+	if len(m.entries) == 0 {
+		return ""
+	}
+	const maxShown = 5
+	n := min(maxShown, len(m.entries))
+
+	rowW := width - 2
+	if rowW < 10 {
+		rowW = 10
+	}
+	maxP := rowW - 14
+	if maxP < 0 {
+		maxP = 0
 	}
 
+	var lines []string
+	lines = append(lines, titleStyle.Render("Recent Entries"))
+	for _, e := range m.entries[:n] {
+		dateStr := e.Date.Format("2006-01-02")
+		preview := firstLine(e.Body)
+		if len(preview) > maxP {
+			preview = preview[:maxP] + "…"
+		}
+		tag := ""
+		if e.Generated {
+			tag = " " + greenStyle.Render("[AI]")
+		}
+		lines = append(lines, " "+amberStyle.Render(fmt.Sprintf("%-12s", dateStr))+"  "+mutedStyle.Render(preview)+tag)
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -1414,11 +1469,7 @@ func (m *Model) rowHitTest(x, y int) int {
 	if x < heatmapPanelW+2 {
 		return -1
 	}
-	h := m.height
-	if h < 20 {
-		h = 24
-	}
-	panelHeight := h - 6
+	panelHeight := m.panelHeight()
 
 	entries := m.visibleEntries()
 	if len(entries) == 0 {
@@ -1430,7 +1481,8 @@ func (m *Model) rowHitTest(x, y int) int {
 		start = m.cursor - maxVis + 1
 	}
 
-	idx := y - 3
+	// header(0) + blank(1) + panel top border(2) + title row(3) → entries start at 4.
+	idx := y - 4
 	if idx < 0 {
 		return -1
 	}
