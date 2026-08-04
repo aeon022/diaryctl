@@ -18,6 +18,7 @@ import (
 	"github.com/aeon022/missionctl-core/overlay"
 	"github.com/aeon022/missionctl-core/palette"
 	"github.com/aeon022/missionctl-core/theme"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -106,12 +107,14 @@ type (
 // ── Model ─────────────────────────────────────────────────────────────────────
 
 type Model struct {
-	store  *store.Store
-	view   viewType
-	width  int
-	height int
-	streak int
-	err    error
+	store   *store.Store
+	view    viewType
+	width   int
+	height  int
+	streak  int
+	err     error
+	loading bool
+	sp      spinner.Model
 
 	// flash message
 	message string
@@ -221,19 +224,24 @@ var paletteCommands = []palette.Command{
 }
 
 func New(s *store.Store) *Model {
+	sp := spinner.New()
+	sp.Spinner = spinner.MiniDot
+	sp.Style = mutedStyle
 	return &Model{
 		store:        s,
 		ta:           newTextarea(),
 		wordGoal:     250,
 		hoverRow:     -1,
 		lastClickRow: -1,
+		loading:      true,
+		sp:           sp,
 	}
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(cmdLoadEntries(m.store), cmdLoadRepos(m.store), cmdAnimTick())
+	return tea.Batch(cmdLoadEntries(m.store), cmdLoadRepos(m.store), cmdAnimTick(), m.sp.Tick)
 }
 
 // cmdRestoreEntry re-saves a deleted entry with its original date/body —
@@ -410,6 +418,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case entriesLoadedMsg:
 		m.entries = msg.entries
 		m.streak, _ = m.store.GetStreak()
+		m.loading = false
+		return m, nil
+
+	case spinner.TickMsg:
+		if m.loading {
+			var cmd tea.Cmd
+			m.sp, cmd = m.sp.Update(msg)
+			return m, cmd
+		}
 		return m, nil
 
 	case reposLoadedMsg:
@@ -466,6 +483,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		m.err = msg.err
+		m.loading = false
 		return m, nil
 
 	case tea.MouseMsg:
@@ -1290,7 +1308,11 @@ func (m *Model) renderEntryList(width, height int) string {
 
 	entries := m.visibleEntries()
 	if len(entries) == 0 {
-		lines = append(lines, "", mutedStyle.Render("No entries yet — press n to generate today's entry."))
+		if m.loading {
+			lines = append(lines, "", "  "+m.sp.View()+mutedStyle.Render(" Loading entries…"))
+		} else {
+			lines = append(lines, "", mutedStyle.Render("No entries yet — press n to generate today's entry."))
+		}
 		return strings.Join(lines, "\n")
 	}
 

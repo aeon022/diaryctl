@@ -7,8 +7,31 @@ import (
 
 	"github.com/aeon022/diaryctl/internal/models"
 	"github.com/aeon022/missionctl-core/palette"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+func TestLoadingSpinner_ShowsWhileLoadingThenEmptyStateOnceDone(t *testing.T) {
+	m := &Model{width: 100, height: 30, loading: true, sp: spinner.New()}
+
+	view := m.renderEntryList(60, 20)
+	if !strings.Contains(view, "Loading entries") {
+		t.Errorf("expected loading spinner text while m.loading is true, got:\n%s", view)
+	}
+	if strings.Contains(view, "No entries yet") {
+		t.Error("expected the empty-state message to be suppressed while loading")
+	}
+
+	// entriesLoadedMsg's handler sets loading = false (also touches m.store,
+	// which needs a real *store.Store — out of scope for this render test,
+	// so the field flip is asserted directly rather than via Update).
+	m.loading = false
+
+	view = m.renderEntryList(60, 20)
+	if !strings.Contains(view, "No entries yet") {
+		t.Errorf("expected the empty-state message once loading is done and there are no entries, got:\n%s", view)
+	}
+}
 
 func TestCommandPalette_TypeFilterAndExecute(t *testing.T) {
 	m := &Model{width: 100, height: 30}
