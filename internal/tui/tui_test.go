@@ -68,6 +68,37 @@ func TestCommandPalette_EscCloses(t *testing.T) {
 	}
 }
 
+// TestDetailScroll_ClampsAtEndOfContent is a regression test for a bug
+// caught via live tmux testing: scrolling down in the detail view had no
+// upper bound, so detailScrl could climb past the entry's actual line
+// count. viewDetail's start/end math clamped `start` to len(bodyLines) but
+// not to a position that still shows a full page, so a slice like
+// bodyLines[len:len] rendered as an emptier and emptier panel the further
+// past the end you scrolled.
+func TestDetailScroll_ClampsAtEndOfContent(t *testing.T) {
+	body := strings.Repeat("line\n", 5) // far fewer lines than any reasonable terminal height
+	m := &Model{
+		width:  100,
+		height: 30,
+		view:   detailView,
+		detail: &models.Entry{Body: body},
+	}
+
+	for i := 0; i < 100; i++ {
+		m.handleDetail(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	}
+
+	want := m.detailMaxScroll()
+	if m.detailScrl != want {
+		t.Errorf("expected detailScrl to clamp at %d (detailMaxScroll), got %d", want, m.detailScrl)
+	}
+
+	view := m.viewDetail()
+	if !strings.Contains(view, "line") {
+		t.Errorf("expected the panel to still show real content after scrolling far past the end, got:\n%s", view)
+	}
+}
+
 func TestHelpOverlay_OpenScrollClose(t *testing.T) {
 	m := &Model{width: 100, height: 30}
 

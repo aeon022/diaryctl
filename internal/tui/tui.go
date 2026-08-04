@@ -731,13 +731,36 @@ func (m *Model) handleHelp(msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
+// detailMaxScroll returns the largest detailScrl that still leaves the
+// detail body's viewport full of real content — mirrors viewDetail's own
+// height math exactly, so scrolling down can never push start past a point
+// where fewer than a full page of lines remain (which rendered as an
+// increasingly empty panel the further past the end you scrolled).
+func (m *Model) detailMaxScroll() int {
+	if m.detail == nil {
+		return 0
+	}
+	h := m.height
+	if h < 20 {
+		h = 24
+	}
+	bodyLines := strings.Split(m.detail.Body, "\n")
+	max := len(bodyLines) - (h - 6)
+	if max < 0 {
+		max = 0
+	}
+	return max
+}
+
 func (m *Model) handleDetail(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc", "q":
 		m.view = listView
 		m.detail = nil
 	case "j", "down":
-		m.detailScrl++
+		if m.detailScrl < m.detailMaxScroll() {
+			m.detailScrl++
+		}
 	case "k", "up":
 		if m.detailScrl > 0 {
 			m.detailScrl--
