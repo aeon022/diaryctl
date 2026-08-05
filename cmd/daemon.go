@@ -239,14 +239,24 @@ var daemonGenerateCmd = &cobra.Command{
 
 		body := diary.BuildEntryBody(ds, tasks, events, times, habits)
 
-		// If ANTHROPIC_API_KEY is set, let Claude write the narrative automatically.
+		// If an AI provider is explicitly configured (API key, or an
+		// explicit DIARYCTL_PROVIDER=ollama opt-in), let it write the
+		// narrative automatically. Deliberately does NOT default to trying
+		// local Ollama the way the interactive TUI's "a" key does — the
+		// daemon runs unattended, so silently attempting a network call to
+		// an Ollama that isn't running would print a scary error on every
+		// background run instead of just skipping quietly like before.
 		notif := "Your diary template is ready. Open Claude Desktop to write the narrative."
-		if filled, err := ai.Fill(body); err == nil {
-			body = filled
-			fmt.Println("✓ Claude wrote the narrative")
-			notif = "Your diary entry for today is written. Open diaryctl to review."
-		} else if err != ai.ErrNoAPIKey {
-			fmt.Printf("⚠ Claude error: %v — saving template only\n", err)
+		aiConfigured := os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("OPENAI_API_KEY") != "" ||
+			os.Getenv("GEMINI_API_KEY") != "" || os.Getenv("DIARYCTL_PROVIDER") != ""
+		if aiConfigured {
+			if filled, err := ai.Fill(body); err == nil {
+				body = filled
+				fmt.Println("✓ AI wrote the narrative")
+				notif = "Your diary entry for today is written. Open diaryctl to review."
+			} else {
+				fmt.Printf("⚠ AI error: %v — saving template only\n", err)
+			}
 		}
 
 		if err := s.SaveEntry(today, body, false); err != nil {

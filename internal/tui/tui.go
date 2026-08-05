@@ -470,9 +470,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			after := countWords(msg.full)
 			m.ta.SetValue(msg.full)
 			m.editorDirty = true
-			m.flash(fmt.Sprintf("Claude wrote %d words (+%d) — review and ctrl+s to save", after, after-before))
+			m.flash(fmt.Sprintf("AI wrote %d words (+%d) — review and ctrl+s to save", after, after-before))
 		} else {
-			m.flash("Claude finished — review and ctrl+s to save")
+			m.flash("AI finished — review and ctrl+s to save")
 		}
 		return m, nil
 
@@ -1086,7 +1086,7 @@ func (m *Model) helpContent() string {
 		Section("Editor").
 		Row("ctrl+s", "save").
 		Row("esc", "save (if dirty) and close").
-		Row("a", "ask Claude to continue the entry").
+		Row("a", "ask AI to continue the entry").
 		Row("ctrl+f", "toggle centered writing mode").
 		Row("ctrl+v", "vim normal mode (hjkl, i/a/o to insert)").
 		Row("tab/[/]", "jump to next AI marker / section").
@@ -1639,7 +1639,7 @@ func (m *Model) viewEditor() string {
 	if m.aiGenerating {
 		dots := [4]string{"⠋", "⠙", "⠹", "⠸"}
 		spin := dots[time.Now().UnixMilli()/120%4]
-		aiHint = "  " + amberStyle.Render(fmt.Sprintf("%s Claude writing… %d words", spin, m.aiTokens))
+		aiHint = "  " + amberStyle.Render(fmt.Sprintf("%s AI writing… %d words", spin, m.aiTokens))
 	} else if aiBlocks > 0 {
 		aiHint = "  " + mutedStyle.Render(fmt.Sprintf("%d AI prompt%s · a to fill · tab to jump", aiBlocks, plural(aiBlocks)))
 	}
