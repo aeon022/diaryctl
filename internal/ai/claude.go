@@ -14,6 +14,12 @@ The user provides a markdown template. Sections marked with <!-- AI: INSTRUCTION
 
 Write in first person. Be specific about the work described. Mention what felt hard, what felt good, what you learned. 2-3 short paragraphs per section. Personal, not corporate.
 
+Right after the "# YYYY-MM-DD" heading, insert two lines the template doesn't already have:
+  ## <a short, specific, descriptive title for what the day was actually about — not "Daily Update" or the date>
+  **Tags:** <one life category, then optionally 1-2 more specific tags>
+
+For the category, reuse one already seen in past entries if this day's work clearly matches it; otherwise pick the closest fit from: FH, Studium, Projekt, Day-Job. Only invent a new category if none of those fit at all.
+
 Return only the completed markdown — no preamble, no explanation.`
 
 func userPrompt(body string) string {

@@ -57,6 +57,13 @@ var (
 	redStyle    = lipgloss.NewStyle().Foreground(colorRed).Bold(true)
 	helpStyle   = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
 	statusStyle = lipgloss.NewStyle().Foreground(colorMuted).Padding(0, 1)
+	// categoryStyle marks a recognized life-category tag (FH, Studium,
+	// Projekt, Day-Job, ... — see diary.IsKnownCategory) so it reads as
+	// "which part of life" at a glance, distinct from a plain project tag.
+	categoryStyle = lipgloss.NewStyle().Foreground(colorBlue)
+	// titleRowStyle marks an entry-list row whose preview is a real
+	// parsed title (diary.ParseTitleTags), not just a muted body snippet.
+	titleRowStyle = lipgloss.NewStyle().Bold(true)
 
 	panelStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -147,8 +154,8 @@ type Model struct {
 	lastDeleted *models.Entry
 
 	// detail
-	detail     *models.Entry
-	detailScrl int
+	detail   *models.Entry
+	detailVP viewport.Model
 
 	// editor
 	editorEntry     *models.Entry
@@ -413,6 +420,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.view == editorView {
 			m.resizeEditor()
 		}
+		if m.view == detailView {
+			m.resizeDetailVP()
+		}
 		return m, nil
 
 	case entriesLoadedMsg:
@@ -506,9 +516,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor = i
 					m.lastClickRow = -1 // consumed, so a third click starts fresh
 					e := m.visibleEntries()[i]
-					m.detail = &e
-					m.detailScrl = 0
-					m.view = detailView
+					m.openDetail(&e)
 					return m, nil
 				}
 				m.cursor = i
@@ -663,9 +671,7 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 	case "enter":
 		if len(entries) > 0 {
 			e := entries[m.cursor]
-			m.detail = &e
-			m.detailScrl = 0
-			m.view = detailView
+			m.openDetail(&e)
 		}
 	case "e":
 		if len(entries) > 0 {
@@ -727,25 +733,47 @@ func (m *Model) handleHelp(msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
-// detailMaxScroll returns the largest detailScrl that still leaves the
-// detail body's viewport full of real content — mirrors viewDetail's own
-// height math exactly, so scrolling down can never push start past a point
-// where fewer than a full page of lines remain (which rendered as an
-// increasingly empty panel the further past the end you scrolled).
-func (m *Model) detailMaxScroll() int {
+// openDetail opens an entry in the detail view, sizing and populating
+// detailVP from scratch (see resizeDetailVP).
+func (m *Model) openDetail(entry *models.Entry) {
+	m.detail = entry
+	m.detailVP = viewport.New(0, 0)
+	m.resizeDetailVP()
+	m.detailVP.GotoTop()
+	m.view = detailView
+}
+
+// resizeDetailVP re-wraps the current entry's body to the terminal's
+// current width and resizes the viewport accordingly — called on open and
+// on every window resize. Pre-wrapping (rather than letting the viewport
+// window raw, unwrapped lines) is what keeps the header/footer fixed for
+// long entries: the previous implementation paginated by raw line count,
+// which undercounted any line long enough for lipgloss to wrap into
+// several visual rows, so the rendered body grew taller than its budget
+// and the whole screen — not just the body — ended up scrolling, taking
+// the header off the top with it.
+func (m *Model) resizeDetailVP() {
 	if m.detail == nil {
-		return 0
+		return
 	}
-	h := m.height
+	w, h := m.width, m.height
+	if w < 40 {
+		w = 80
+	}
 	if h < 20 {
 		h = 24
 	}
-	bodyLines := strings.Split(m.detail.Body, "\n")
-	max := len(bodyLines) - (h - 6)
-	if max < 0 {
-		max = 0
+	innerW := w - 6 // mirrors panelStyle's border(2)+padding(2) below
+	if innerW < 10 {
+		innerW = 10
 	}
-	return max
+	vpH := h - 6
+	if vpH < 3 {
+		vpH = 3
+	}
+	m.detailVP.Width = innerW
+	m.detailVP.Height = vpH
+	m.detailVP.SetContent(lipgloss.NewStyle().Width(innerW).Render(renderMarkdown(m.detail.Body)))
 }
 
 func (m *Model) handleDetail(msg tea.KeyMsg) tea.Cmd {
@@ -754,13 +782,9 @@ func (m *Model) handleDetail(msg tea.KeyMsg) tea.Cmd {
 		m.view = listView
 		m.detail = nil
 	case "j", "down":
-		if m.detailScrl < m.detailMaxScroll() {
-			m.detailScrl++
-		}
+		m.detailVP.LineDown(1)
 	case "k", "up":
-		if m.detailScrl > 0 {
-			m.detailScrl--
-		}
+		m.detailVP.LineUp(1)
 	case "e":
 		if m.detail != nil {
 			return m.openEditor(m.detail)
@@ -1396,7 +1420,13 @@ func (m *Model) renderRecentEntries(width int) string {
 	lines = append(lines, titleStyle.Render("Recent Entries"))
 	for _, e := range m.entries[:n] {
 		dateStr := e.Date.Format("2006-01-02")
-		preview := firstLine(e.Body)
+		title, _ := diary.ParseTitleTags(e.Body)
+		preview := title
+		previewStyle := titleRowStyle
+		if preview == "" {
+			preview = firstLine(e.Body)
+			previewStyle = mutedStyle
+		}
 		if len(preview) > maxP {
 			preview = preview[:maxP] + "…"
 		}
@@ -1404,7 +1434,7 @@ func (m *Model) renderRecentEntries(width int) string {
 		if e.Generated {
 			tag = " " + greenStyle.Render("[AI]")
 		}
-		lines = append(lines, " "+amberStyle.Render(fmt.Sprintf("%-12s", dateStr))+"  "+mutedStyle.Render(preview)+tag)
+		lines = append(lines, " "+amberStyle.Render(fmt.Sprintf("%-12s", dateStr))+"  "+previewStyle.Render(preview)+tag)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1470,18 +1500,31 @@ func (m *Model) renderEntryList(width, height int) string {
 		}
 		dateStr := e.Date.Format("2006-01-02")
 
+		title, tags := diary.ParseTitleTags(e.Body)
+		preview := title
+		if preview == "" {
+			preview = firstLine(e.Body)
+		}
+
 		tagPlain := ""
 		tagStyled := ""
+		for _, t := range tags {
+			tagPlain += " #" + t
+			if diary.IsKnownCategory(t) {
+				tagStyled += " " + categoryStyle.Render("#"+t)
+			} else {
+				tagStyled += " " + mutedStyle.Render("#"+t)
+			}
+		}
 		if e.Generated {
-			tagPlain = " [AI]"
-			tagStyled = " " + greenStyle.Render("[AI]")
+			tagPlain += " [AI]"
+			tagStyled += " " + greenStyle.Render("[AI]")
 		}
 
 		maxP := rowW - 14 - len(tagPlain)
 		if maxP < 0 {
 			maxP = 0
 		}
-		preview := firstLine(e.Body)
 		if len(preview) > maxP {
 			preview = preview[:maxP] + "…"
 		}
@@ -1499,9 +1542,14 @@ func (m *Model) renderEntryList(width, height int) string {
 			// Build styled row without nesting ANSI inside fmt.Sprintf — avoids
 			// lipgloss width miscalculation on content with embedded escape codes.
 			var previewStyled string
-			if m.searchQuery != "" {
+			switch {
+			case m.searchQuery != "":
 				previewStyled = highlightMatch(preview, m.searchQuery)
-			} else {
+			case title != "":
+				// A real title, not just a body-snippet preview — worth a
+				// touch more visual weight than the muted fallback below.
+				previewStyled = titleRowStyle.Render(preview)
+			default:
 				previewStyled = mutedStyle.Render(preview)
 			}
 			// Manual Padding(0,1): one space on each side.
@@ -1550,35 +1598,38 @@ func (m *Model) viewDetail() string {
 	if m.detail == nil {
 		return "No entry selected."
 	}
-	w, h := m.width, m.height
+	w := m.width
 	if w < 40 {
 		w = 80
 	}
-	if h < 20 {
-		h = 24
-	}
 
+	title, tags := diary.ParseTitleTags(m.detail.Body)
 	header := m.renderHeader("Entry") + "  " + amberStyle.Render(m.detail.Date.Format("2006-01-02"))
+	if title != "" {
+		header += "  " + titleRowStyle.Render(title)
+	}
+	for _, t := range tags {
+		if diary.IsKnownCategory(t) {
+			header += " " + categoryStyle.Render("#"+t)
+		} else {
+			header += " " + mutedStyle.Render("#"+t)
+		}
+	}
 	if m.detail.Generated {
 		header += " " + greenStyle.Render("[AI]")
 	}
 
-	bodyLines := strings.Split(m.detail.Body, "\n")
-	end := m.detailScrl + h - 6
-	if end > len(bodyLines) {
-		end = len(bodyLines)
+	body := panelStyle.Width(w - 4).Render(m.detailVP.View())
+
+	footer := "j/k scroll  e edit  d delete  g open note  esc back"
+	if m.detailVP.TotalLineCount() > m.detailVP.Height {
+		footer = fmt.Sprintf("j/k scroll (%d%%)  ·  %s", int(m.detailVP.ScrollPercent()*100), footer)
 	}
-	start := m.detailScrl
-	if start > len(bodyLines) {
-		start = len(bodyLines)
-	}
-	rendered := renderMarkdown(strings.Join(bodyLines[start:end], "\n"))
-	body := panelStyle.Width(w - 4).Render(rendered)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		body,
-		helpStyle.Render("j/k scroll  e edit  d delete  g open note  esc back"),
+		helpStyle.Render(footer),
 	)
 }
 
