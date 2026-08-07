@@ -71,27 +71,20 @@ func TestCommandPalette_EscCloses(t *testing.T) {
 
 // TestDetailScroll_ClampsAtEndOfContent is a regression test for a bug
 // caught via live tmux testing: scrolling down in the detail view had no
-// upper bound, so detailScrl could climb past the entry's actual line
-// count. viewDetail's start/end math clamped `start` to len(bodyLines) but
-// not to a position that still shows a full page, so a slice like
-// bodyLines[len:len] rendered as an emptier and emptier panel the further
-// past the end you scrolled.
+// upper bound. That was on the old raw-line-count-based pagination
+// (detailScrl/detailMaxScroll); viewDetail now delegates to a
+// viewport.Model, whose own YOffset clamping is what this exercises now.
 func TestDetailScroll_ClampsAtEndOfContent(t *testing.T) {
 	body := strings.Repeat("line\n", 5) // far fewer lines than any reasonable terminal height
-	m := &Model{
-		width:  100,
-		height: 30,
-		view:   detailView,
-		detail: &models.Entry{Body: body},
-	}
+	m := &Model{width: 100, height: 30}
+	m.openDetail(&models.Entry{Body: body})
 
 	for i := 0; i < 100; i++ {
 		m.handleDetail(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	}
 
-	want := m.detailMaxScroll()
-	if m.detailScrl != want {
-		t.Errorf("expected detailScrl to clamp at %d (detailMaxScroll), got %d", want, m.detailScrl)
+	if !m.detailVP.AtBottom() {
+		t.Errorf("expected detailVP to clamp at the bottom after scrolling far past the end, YOffset=%d", m.detailVP.YOffset)
 	}
 
 	view := m.viewDetail()
