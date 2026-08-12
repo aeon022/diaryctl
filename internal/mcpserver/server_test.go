@@ -3,64 +3,49 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/aeon022/diaryctl/internal/store"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
-// newTestServer registers the same 5 tools Serve() does, against a temp
-// store, without calling Serve() itself (which blocks forever on stdio).
+// newTestServer registers the same 5 tools Serve() does, without calling
+// Serve() itself (which blocks forever on stdio). Each handler opens its
+// own store per call via openStore(), which resolves DIARYCTL_DATA_DIR —
+// set here to an isolated temp dir so tests never touch the real database.
 // All handlers are local SQLite + local git log reads (git.DayStats) plus
 // read-only reads of sister-tool DBs (internal/suite) — nothing external.
 func newTestServer(t *testing.T) *mcpserver.MCPServer {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "diaryctl.db")
-	s, err := store.Open(path, false)
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { s.Close() })
+	t.Setenv("DIARYCTL_DATA_DIR", t.TempDir())
 
 	srv := mcpserver.NewMCPServer("diaryctl", "test", mcpserver.WithToolCapabilities(true))
 
 	srv.AddTool(
 		mcp.NewTool("get_today_stats", mcp.WithDescription("...")),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return handleGetTodayStats(ctx, req, s)
-		},
+		handleGetTodayStats,
 	)
 	srv.AddTool(
 		mcp.NewTool("get_diary_entry", mcp.WithDescription("..."),
 			mcp.WithString("date", mcp.Description("..."))),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return handleGetDiaryEntry(ctx, req, s)
-		},
+		handleGetDiaryEntry,
 	)
 	srv.AddTool(
 		mcp.NewTool("write_diary_entry", mcp.WithDescription("..."),
 			mcp.WithString("date", mcp.Description("...")),
 			mcp.WithString("body", mcp.Description("..."), mcp.Required())),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return handleWriteDiaryEntry(ctx, req, s)
-		},
+		handleWriteDiaryEntry,
 	)
 	srv.AddTool(
 		mcp.NewTool("get_coding_stats", mcp.WithDescription("..."),
 			mcp.WithNumber("days", mcp.Description("..."))),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return handleGetCodingStats(ctx, req, s)
-		},
+		handleGetCodingStats,
 	)
 	srv.AddTool(
 		mcp.NewTool("list_diary_entries", mcp.WithDescription("..."),
 			mcp.WithNumber("limit", mcp.Description("..."))),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return handleListDiaryEntries(ctx, req, s)
-		},
+		handleListDiaryEntries,
 	)
 	return srv
 }

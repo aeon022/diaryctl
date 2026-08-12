@@ -16,7 +16,15 @@ import (
 )
 
 // Serve starts the MCP server on stdio.
-func Serve(s *store.Store) error {
+//
+// Each tool handler opens its own Store per call (openStore below) instead
+// of one Store opened here and held for the server's whole lifetime, the
+// way this used to work. store.Open takes an exclusive file lock meant to
+// be held briefly, for one operation — a long-running MCP server holding
+// it permanently meant the plain `diaryctl` CLI could never open the same
+// database while this server was up, always failing with "already running
+// elsewhere" (same bug, same fix, as timectl's MCP server got first).
+func Serve() error {
 	srv := server.NewMCPServer(
 		"diaryctl",
 		"1.0.0",
@@ -28,9 +36,7 @@ func Serve(s *store.Store) error {
 		mcp.NewTool("get_today_stats",
 			mcp.WithDescription("Returns git commit stats for today across all registered repos."),
 		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return handleGetTodayStats(ctx, req, s)
-		},
+		handleGetTodayStats,
 	)
 
 	// 2. get_diary_entry
@@ -41,9 +47,7 @@ func Serve(s *store.Store) error {
 				mcp.Description("Date in YYYY-MM-DD format. Defaults to today."),
 			),
 		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return handleGetDiaryEntry(ctx, req, s)
-		},
+		handleGetDiaryEntry,
 	)
 
 	// 3. write_diary_entry
@@ -58,9 +62,7 @@ func Serve(s *store.Store) error {
 				mcp.Required(),
 			),
 		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return handleWriteDiaryEntry(ctx, req, s)
-		},
+		handleWriteDiaryEntry,
 	)
 
 	// 4. get_coding_stats
@@ -71,9 +73,7 @@ func Serve(s *store.Store) error {
 				mcp.Description("Number of days to look back. Defaults to 7."),
 			),
 		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return handleGetCodingStats(ctx, req, s)
-		},
+		handleGetCodingStats,
 	)
 
 	// 5. list_diary_entries
@@ -84,17 +84,29 @@ func Serve(s *store.Store) error {
 				mcp.Description("Maximum number of entries to return. Defaults to 10."),
 			),
 		),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return handleListDiaryEntries(ctx, req, s)
-		},
+		handleListDiaryEntries,
 	)
 
 	return server.ServeStdio(srv)
 }
 
+func openStore() (*store.Store, error) {
+	path, shared, err := store.ResolveDBPath()
+	if err != nil {
+		return nil, fmt.Errorf("resolve db path: %w", err)
+	}
+	return store.Open(path, shared)
+}
+
 // --- Tool handlers ---
 
-func handleGetTodayStats(_ context.Context, _ mcp.CallToolRequest, s *store.Store) (*mcp.CallToolResult, error) {
+func handleGetTodayStats(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	s, err := openStore()
+	if err != nil {
+		return toolError(err), nil
+	}
+	defer s.Close()
+
 	repos, err := s.ListRepos()
 	if err != nil {
 		return toolError(err), nil
@@ -166,7 +178,7 @@ func handleGetTodayStats(_ context.Context, _ mcp.CallToolRequest, s *store.Stor
 	return toolJSON(res)
 }
 
-func handleGetDiaryEntry(_ context.Context, req mcp.CallToolRequest, s *store.Store) (*mcp.CallToolResult, error) {
+func handleGetDiaryEntry(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	date := time.Now()
 	dateStr := req.GetString("date", "")
 	if dateStr != "" {
@@ -176,6 +188,12 @@ func handleGetDiaryEntry(_ context.Context, req mcp.CallToolRequest, s *store.St
 			return toolError(fmt.Errorf("invalid date format, use YYYY-MM-DD")), nil
 		}
 	}
+
+	s, err := openStore()
+	if err != nil {
+		return toolError(err), nil
+	}
+	defer s.Close()
 
 	entry, err := s.GetEntry(date)
 	if err != nil {
@@ -188,7 +206,7 @@ func handleGetDiaryEntry(_ context.Context, req mcp.CallToolRequest, s *store.St
 	return mcp.NewToolResultText(entry.Body), nil
 }
 
-func handleWriteDiaryEntry(_ context.Context, req mcp.CallToolRequest, s *store.Store) (*mcp.CallToolResult, error) {
+func handleWriteDiaryEntry(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	body := req.GetString("body", "")
 	if body == "" {
 		return toolError(fmt.Errorf("body is required")), nil
@@ -204,6 +222,12 @@ func handleWriteDiaryEntry(_ context.Context, req mcp.CallToolRequest, s *store.
 		}
 	}
 
+	s, err := openStore()
+	if err != nil {
+		return toolError(err), nil
+	}
+	defer s.Close()
+
 	if err := s.SaveEntry(date, body, true); err != nil {
 		return toolError(err), nil
 	}
@@ -211,11 +235,17 @@ func handleWriteDiaryEntry(_ context.Context, req mcp.CallToolRequest, s *store.
 	return mcp.NewToolResultText(fmt.Sprintf("Entry saved for %s", date.Format("2006-01-02"))), nil
 }
 
-func handleGetCodingStats(_ context.Context, req mcp.CallToolRequest, s *store.Store) (*mcp.CallToolResult, error) {
+func handleGetCodingStats(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	days := int(req.GetFloat("days", 7))
 	if days <= 0 {
 		days = 7
 	}
+
+	s, err := openStore()
+	if err != nil {
+		return toolError(err), nil
+	}
+	defer s.Close()
 
 	repos, err := s.ListRepos()
 	if err != nil {
@@ -293,11 +323,17 @@ func handleGetCodingStats(_ context.Context, req mcp.CallToolRequest, s *store.S
 	return toolJSON(res)
 }
 
-func handleListDiaryEntries(_ context.Context, req mcp.CallToolRequest, s *store.Store) (*mcp.CallToolResult, error) {
+func handleListDiaryEntries(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	limit := int(req.GetFloat("limit", 10))
 	if limit <= 0 {
 		limit = 10
 	}
+
+	s, err := openStore()
+	if err != nil {
+		return toolError(err), nil
+	}
+	defer s.Close()
 
 	entries, err := s.ListEntries(limit)
 	if err != nil {
