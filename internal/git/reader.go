@@ -204,10 +204,3 @@ func parseShortstat(s string) (files, additions, deletions int) {
 	}
 	return
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

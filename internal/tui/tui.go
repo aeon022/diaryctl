@@ -231,9 +231,7 @@ var paletteCommands = []palette.Command{
 }
 
 func New(s *store.Store) *Model {
-	sp := spinner.New()
-	sp.Spinner = spinner.MiniDot
-	sp.Style = mutedStyle
+	sp := theme.NewSpinner(mutedStyle)
 	return &Model{
 		store:        s,
 		ta:           newTextarea(),
