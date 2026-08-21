@@ -414,7 +414,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
-		m.height = msg.Height
+		// -1: reserves one row of slack so View() output never has exactly
+		// as many lines as the real terminal height — combined with no
+		// trailing newline, that exact match can make bubbletea v1 fail to
+		// fully redraw (charmbracelet/bubbletea#304).
+		m.height = msg.Height - 1
+		if m.height < 1 {
+			m.height = 1
+		}
 		if m.view == editorView {
 			m.resizeEditor()
 		}
@@ -1680,7 +1687,14 @@ func (m *Model) viewEditor() string {
 	keysRight := mutedStyle.Render(fmt.Sprintf("ctrl+s save  %s  [ ] jump  ctrl+f focus  %s  esc done", aKey, vimHint))
 	gap := w - lipgloss.Width(statusLeft) - lipgloss.Width(keysRight)
 	if gap < 1 {
-		gap = 1
+		// statusLeft (word count/timer/save state) is the core status —
+		// drop the key-hint text instead of clamping gap to 1 and
+		// appending it anyway, which could push the line past w.
+		keysRight = ""
+		gap = w - lipgloss.Width(statusLeft)
+		if gap < 0 {
+			gap = 0
+		}
 	}
 	statusBar := statusLeft + strings.Repeat(" ", gap) + keysRight
 
@@ -1890,7 +1904,7 @@ func plural(n int) string {
 
 func Run(s *store.Store) error {
 	m := New(s)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseAllMotion())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithFPS(30))
 	_, err := p.Run()
 	return err
 }
