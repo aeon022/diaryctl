@@ -40,7 +40,7 @@ type TimeEntry struct {
 // TodayTasks returns tasks completed today from taskctl's database.
 // Returns an empty slice (no error) if taskctl is not installed.
 func TodayTasks() ([]CompletedTask, error) {
-	path, err := expandPath("~/Library/Application Support/taskctl/taskctl.db")
+	path, err := ExpandPath("~/Library/Application Support/taskctl/taskctl.db")
 	if err != nil {
 		return nil, nil
 	}
@@ -82,7 +82,7 @@ func TodayTasks() ([]CompletedTask, error) {
 // TodayEvents returns calendar events for today from calctl's database.
 // Returns an empty slice (no error) if calctl is not installed.
 func TodayEvents() ([]CalendarEvent, error) {
-	path, err := expandPath("~/Library/Application Support/calctl/calctl.db")
+	path, err := ExpandPath("~/Library/Application Support/calctl/calctl.db")
 	if err != nil {
 		return nil, nil
 	}
@@ -124,7 +124,7 @@ func TodayEvents() ([]CalendarEvent, error) {
 // TodayTimeEntries returns completed time entries for today from timectl's database.
 // Returns an empty slice (no error) if timectl is not installed.
 func TodayTimeEntries() ([]TimeEntry, error) {
-	path, err := expandPath("~/.local/share/timectl/time.db")
+	path, err := ExpandPath("~/.local/share/timectl/time.db")
 	if err != nil {
 		return nil, nil
 	}
@@ -184,7 +184,7 @@ type HabitStatus struct {
 // TodayHabits returns all habits with today's status from habctl's database.
 // Returns an empty slice (no error) if habctl is not installed.
 func TodayHabits() ([]HabitStatus, error) {
-	path, err := expandPath("~/.local/share/habctl/habits.db")
+	path, err := ExpandPath("~/.local/share/habctl/habits.db")
 	if err != nil {
 		return nil, nil
 	}
@@ -252,8 +252,8 @@ func TodayHabits() ([]HabitStatus, error) {
 	return result, nil
 }
 
-// expandPath replaces a leading ~ with the user's home directory.
-func expandPath(path string) (string, error) {
+// ExpandPath replaces a leading ~ with the user's home directory.
+func ExpandPath(path string) (string, error) {
 	if len(path) > 0 && path[0] == '~' {
 		home, err := os.UserHomeDir()
 		if err != nil {

@@ -2,9 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"time"
-	"unicode"
 
+	"github.com/aeon022/diaryctl/internal/diary"
 	"github.com/aeon022/diaryctl/internal/git"
 	"github.com/spf13/cobra"
 )
@@ -86,7 +87,7 @@ var statsCmd = &cobra.Command{
 		}
 
 		fmt.Printf("\n  Productivity Stats — last %d days\n", statsDays)
-		fmt.Println("  " + repeatStr("─", 38))
+		fmt.Println("  " + strings.Repeat("─", 38))
 		fmt.Printf("  %-24s %d days\n", "Streak:", streak)
 		fmt.Printf("  %-24s %d\n", "Active days:", activeDays)
 		fmt.Printf("  %-24s %d\n", "Total commits:", totalCommits)
@@ -99,7 +100,7 @@ var statsCmd = &cobra.Command{
 
 		fmt.Println()
 		fmt.Println("  Repo Breakdown:")
-		fmt.Println("  " + repeatStr("─", 38))
+		fmt.Println("  " + strings.Repeat("─", 38))
 		for _, repo := range repos {
 			count := repoCounts[repo.Name]
 			bar := barStr(count, totalCommits, 20)
@@ -108,7 +109,7 @@ var statsCmd = &cobra.Command{
 
 		fmt.Println()
 		fmt.Println("  Daily Activity (last 14 days):")
-		fmt.Println("  " + repeatStr("─", 38))
+		fmt.Println("  " + strings.Repeat("─", 38))
 		today := time.Now()
 		for i := 13; i >= 0; i-- {
 			d := today.AddDate(0, 0, -i)
@@ -122,7 +123,7 @@ var statsCmd = &cobra.Command{
 			}
 			bar := barStr(dayCommits, 10, 20)
 			if dayCommits == 0 {
-				bar = repeatStr("·", 20)
+				bar = strings.Repeat("·", 20)
 			}
 			fmt.Printf("  %-12s [%s] %d commits\n", dateStr, bar, dayCommits)
 		}
@@ -133,7 +134,7 @@ var statsCmd = &cobra.Command{
 			entryMap := map[string]int{}
 			maxWC := 0
 			for _, e := range entries {
-				wc := wordCountStr(e.Body)
+				wc := diary.WordCount(e.Body)
 				entryMap[e.Date.Format("2006-01-02")] = wc
 				if wc > maxWC {
 					maxWC = wc
@@ -145,14 +146,14 @@ var statsCmd = &cobra.Command{
 
 			fmt.Println()
 			fmt.Println("  Word Count (last 14 days):")
-			fmt.Println("  " + repeatStr("─", 38))
+			fmt.Println("  " + strings.Repeat("─", 38))
 			for i := 13; i >= 0; i-- {
 				d := today.AddDate(0, 0, -i)
 				dateStr := d.Format("Mon 01/02")
 				wc := entryMap[d.Format("2006-01-02")]
 				bar := barStr(wc, maxWC, 20)
 				if wc == 0 {
-					bar = repeatStr("·", 20)
+					bar = strings.Repeat("·", 20)
 				}
 				fmt.Printf("  %-12s [%s] %dw\n", dateStr, bar, wc)
 			}
@@ -167,34 +168,13 @@ func init() {
 	statsCmd.Flags().IntVar(&statsDays, "days", 30, "Number of days to analyze")
 }
 
-func repeatStr(s string, n int) string {
-	result := ""
-	for i := 0; i < n; i++ {
-		result += s
-	}
-	return result
-}
-
-func wordCountStr(s string) int {
-	n, inWord := 0, false
-	for _, r := range s {
-		if unicode.IsSpace(r) {
-			inWord = false
-		} else if !inWord {
-			inWord = true
-			n++
-		}
-	}
-	return n
-}
-
 func barStr(count, max, width int) string {
 	if max == 0 {
-		return repeatStr(" ", width)
+		return strings.Repeat(" ", width)
 	}
 	filled := (count * width) / max
 	if filled > width {
 		filled = width
 	}
-	return repeatStr("█", filled) + repeatStr(" ", width-filled)
+	return strings.Repeat("█", filled) + strings.Repeat(" ", width-filled)
 }

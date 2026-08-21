@@ -5,7 +5,6 @@ import (
 	"os/exec"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/aeon022/diaryctl/internal/ai"
 	"github.com/aeon022/diaryctl/internal/diary"
@@ -481,8 +480,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case aiDoneMsg:
 		m.aiGenerating = false
 		if msg.full != "" {
-			before := countWords(m.aiBeforeContent)
-			after := countWords(msg.full)
+			before := diary.WordCount(m.aiBeforeContent)
+			after := diary.WordCount(msg.full)
 			m.ta.SetValue(msg.full)
 			m.editorDirty = true
 			m.flash(fmt.Sprintf("AI wrote %d words (+%d) — review and ctrl+s to save", after, after-before))
@@ -1391,7 +1390,7 @@ func (m *Model) renderTodayLine() string {
 		parts = append(parts, fmt.Sprintf("%d event%s", m.todayEvents, plural(m.todayEvents)))
 	}
 	if m.todayDuration > 0 {
-		parts = append(parts, formatDuration(m.todayDuration))
+		parts = append(parts, diary.FormatDuration(m.todayDuration))
 	}
 	summary := mutedStyle.Render("nothing yet")
 	if len(parts) > 0 {
@@ -1645,7 +1644,7 @@ func (m *Model) viewEditor() string {
 	}
 
 	content := m.ta.Value()
-	wc := countWords(content)
+	wc := diary.WordCount(content)
 	sec := currentSection(content, m.ta.Line())
 	aiBlocks := strings.Count(content, "<!-- AI:")
 
@@ -1819,16 +1818,6 @@ func highlightMatch(s, q string) string {
 	return before + match + after
 }
 
-// formatDuration returns a compact human-readable duration like "4h 20m".
-func formatDuration(d time.Duration) string {
-	h := int(d.Hours())
-	mins := int(d.Minutes()) % 60
-	if h > 0 {
-		return fmt.Sprintf("%dh %dm", h, mins)
-	}
-	return fmt.Sprintf("%dm", mins)
-}
-
 func firstLine(s string) string {
 	for _, line := range strings.Split(s, "\n") {
 		line = strings.TrimSpace(line)
@@ -1839,19 +1828,6 @@ func firstLine(s string) string {
 		}
 	}
 	return "(empty)"
-}
-
-func countWords(s string) int {
-	n, inWord := 0, false
-	for _, r := range s {
-		if unicode.IsSpace(r) {
-			inWord = false
-		} else if !inWord {
-			inWord = true
-			n++
-		}
-	}
-	return n
 }
 
 func currentSection(content string, cursorLine int) string {

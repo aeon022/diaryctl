@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
+	"github.com/aeon022/diaryctl/internal/diary"
 	"github.com/aeon022/diaryctl/internal/git"
-	"github.com/aeon022/diaryctl/internal/models"
 	"github.com/aeon022/diaryctl/internal/store"
 	"github.com/aeon022/diaryctl/internal/suite"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -172,7 +171,7 @@ func handleGetTodayStats(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToo
 		CompletedTasks: len(tasks),
 		CalendarEvents: len(events),
 		TimeTrackedSec: int64(totalDur.Seconds()),
-		TimeTrackedStr: formatDuration(totalDur),
+		TimeTrackedStr: diary.FormatDuration(totalDur),
 	}
 
 	return toolJSON(res)
@@ -364,19 +363,6 @@ func handleListDiaryEntries(_ context.Context, req mcp.CallToolRequest) (*mcp.Ca
 
 // --- helpers ---
 
-// formatDuration formats a duration as "Xh Ym" (no seconds).
-func formatDuration(d time.Duration) string {
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	if h > 0 && m > 0 {
-		return fmt.Sprintf("%dh %dm", h, m)
-	}
-	if h > 0 {
-		return fmt.Sprintf("%dh", h)
-	}
-	return fmt.Sprintf("%dm", m)
-}
-
 func toolError(err error) *mcp.CallToolResult {
 	return mcp.NewToolResultError(err.Error())
 }
@@ -387,17 +373,4 @@ func toolJSON(v any) (*mcp.CallToolResult, error) {
 		return toolError(err), nil
 	}
 	return mcp.NewToolResultText(string(b)), nil
-}
-
-// FormatStats formats DayStats as human-readable text.
-func FormatStats(ds models.DayStats) string {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Date:    %s\n", ds.Date.Format("2006-01-02")))
-	sb.WriteString(fmt.Sprintf("Commits: %d\n", len(ds.Commits)))
-	sb.WriteString(fmt.Sprintf("Files:   %d changed\n", ds.TotalFiles))
-	sb.WriteString(fmt.Sprintf("Lines:   +%d / -%d\n", ds.TotalAdded, ds.TotalDeleted))
-	if ds.ActiveMins > 0 {
-		sb.WriteString(fmt.Sprintf("Active:  ~%d min\n", ds.ActiveMins))
-	}
-	return sb.String()
 }

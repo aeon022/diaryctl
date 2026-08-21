@@ -18,6 +18,7 @@ type CommitStat struct {
 	Files     int
 	Additions int
 	Deletions int
+	RepoName  string // name of the repo this commit belongs to
 }
 
 // DayStats aggregates commit activity for a single day across repos.

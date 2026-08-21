@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/aeon022/diaryctl/internal/models"
 	"github.com/aeon022/diaryctl/internal/suite"
 )
 
-// formatDuration formats a duration as "Xh Ym" (no seconds).
-func formatDuration(d time.Duration) string {
+// FormatDuration formats a duration as "Xh Ym" (no seconds).
+func FormatDuration(d time.Duration) string {
 	h := int(d.Hours())
 	m := int(d.Minutes()) % 60
 	if h > 0 && m > 0 {
@@ -21,6 +22,20 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dh", h)
 	}
 	return fmt.Sprintf("%dm", m)
+}
+
+// WordCount returns the number of whitespace-separated words in s.
+func WordCount(s string) int {
+	n, inWord := 0, false
+	for _, r := range s {
+		if unicode.IsSpace(r) {
+			inWord = false
+		} else if !inWord {
+			inWord = true
+			n++
+		}
+	}
+	return n
 }
 
 // BuildEntryBody constructs the markdown diary entry body for the given day.
@@ -42,7 +57,7 @@ func BuildEntryBody(
 	sb.WriteString(fmt.Sprintf("- **Streak:** %d days\n", stats.Streak))
 	if len(timeEntries) > 0 {
 		total := suite.TotalDuration(timeEntries)
-		sb.WriteString(fmt.Sprintf("- **Time tracked:** %s\n", formatDuration(total)))
+		sb.WriteString(fmt.Sprintf("- **Time tracked:** %s\n", FormatDuration(total)))
 	}
 	sb.WriteString("\n")
 
@@ -73,7 +88,7 @@ func BuildEntryBody(
 	if len(timeEntries) > 0 {
 		sb.WriteString("## Time Log\n")
 		for _, e := range timeEntries {
-			line := fmt.Sprintf("- %s  %s", formatDuration(e.Duration), e.Task)
+			line := fmt.Sprintf("- %s  %s", FormatDuration(e.Duration), e.Task)
 			if e.Project != "" {
 				line += fmt.Sprintf("  [%s]", e.Project)
 			}

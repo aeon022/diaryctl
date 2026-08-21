@@ -20,8 +20,8 @@ func TestFormatDuration(t *testing.T) {
 		{0, "0m"},
 	}
 	for _, c := range cases {
-		if got := formatDuration(c.in); got != c.want {
-			t.Errorf("formatDuration(%v) = %q, want %q", c.in, got, c.want)
+		if got := FormatDuration(c.in); got != c.want {
+			t.Errorf("FormatDuration(%v) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }

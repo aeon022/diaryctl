@@ -74,6 +74,7 @@ func repoCommits(repo models.Repo, since, until string) ([]models.CommitStat, er
 			Message:   parts[1],
 			Author:    parts[2],
 			Timestamp: ts,
+			RepoName:  repo.Name,
 		})
 	}
 
@@ -115,20 +116,20 @@ func DayStats(repos []models.Repo, date time.Time) (models.DayStats, error) {
 		stats.TotalFiles += c.Files
 		stats.TotalAdded += c.Additions
 		stats.TotalDeleted += c.Deletions
-		// track unique repos by author/timestamp — approximate.
+		if c.RepoName != "" {
+			repoSet[c.RepoName] = true
+		}
 		if earliest.IsZero() || c.Timestamp.Before(earliest) {
 			earliest = c.Timestamp
 		}
 		if latest.IsZero() || c.Timestamp.After(latest) {
 			latest = c.Timestamp
 		}
-		_ = repoSet
 	}
 
-	// Collect repo names that had commits.
+	// Collect repo names that had commits, in repos order.
 	for _, repo := range repos {
-		rc, _ := repoCommits(repo, date.Format("2006-01-02")+" 00:00:00", date.Format("2006-01-02")+" 23:59:59")
-		if len(rc) > 0 {
+		if repoSet[repo.Name] {
 			stats.Repos = append(stats.Repos, repo.Name)
 		}
 	}

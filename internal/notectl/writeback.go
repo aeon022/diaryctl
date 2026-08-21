@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
+	"github.com/aeon022/diaryctl/internal/suite"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -40,9 +40,5 @@ func readVaultPath() (string, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return "", nil
 	}
-	p := cfg.VaultPath
-	if strings.HasPrefix(p, "~/") {
-		p = filepath.Join(home, p[2:])
-	}
-	return p, nil
+	return suite.ExpandPath(cfg.VaultPath)
 }
