@@ -1251,9 +1251,18 @@ func (m *Model) viewList() string {
 	if recent := m.renderRecentEntries(w); recent != "" {
 		sections = append(sections, "", recent)
 	}
-	sections = append(sections, "", statusLine, helpStyle.Render(helpText))
+	sections = append(sections, "", statusLine)
 
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	body := lipgloss.JoinVertical(lipgloss.Left, sections...)
+
+	// Pin the help bar to the bottom of the screen instead of letting it
+	// glue itself right under the panels — pad the body out to the
+	// terminal height first, same pattern taskctl/notectl use.
+	for lines := strings.Count(body, "\n") + 1; lines < h-1; lines++ {
+		body += "\n"
+	}
+
+	return body + "\n" + helpStyle.Render(helpText)
 }
 
 // heatLevels is the shared 5-tier commit-count gradient, index 0 = none.
@@ -1755,7 +1764,16 @@ func (m *Model) viewRepos() string {
 	default:
 		footer = helpStyle.Render("j/k:navigate  d:delete  u:undo  esc:back")
 	}
-	lines = append(lines, "", footer)
+	lines = append(lines, "")
+
+	// Pin the footer to the bottom of the screen instead of letting it
+	// glue itself right under a short repo list — pad the body out to
+	// the terminal height first, same pattern taskctl/notectl use.
+	for len(lines) < m.height-1 {
+		lines = append(lines, "")
+	}
+
+	lines = append(lines, footer)
 	return strings.Join(lines, "\n")
 }
 
