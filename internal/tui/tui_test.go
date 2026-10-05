@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/aeon022/diaryctl/internal/models"
 	"github.com/aeon022/missionctl-core/palette"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 func TestLoadingSpinner_ShowsWhileLoadingThenEmptyStateOnceDone(t *testing.T) {
@@ -37,20 +37,20 @@ func TestLoadingSpinner_ShowsWhileLoadingThenEmptyStateOnceDone(t *testing.T) {
 func TestCommandPalette_TypeFilterAndExecute(t *testing.T) {
 	m := &Model{width: 100, height: 30}
 
-	m.handleList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	m.handleList(tea.KeyPressMsg{Text: ":", Code: []rune(":")[0]})
 	if !m.inPalette {
 		t.Fatal("expected inPalette after ':'")
 	}
 
 	for _, r := range "rep" {
-		m.handleList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m.handleList(tea.KeyPressMsg{Text: string(r), Code: r})
 	}
 	matches := palette.Match(paletteCommands, m.paletteQuery)
 	if len(matches) == 0 || matches[0].Name != "repos" {
 		t.Fatalf("expected 'repos' to be the top match for query %q, got %v", m.paletteQuery, matches)
 	}
 
-	m.handleList(tea.KeyMsg{Type: tea.KeyEnter})
+	m.handleList(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if m.inPalette {
 		t.Error("expected palette to close after executing a command")
 	}
@@ -61,9 +61,9 @@ func TestCommandPalette_TypeFilterAndExecute(t *testing.T) {
 
 func TestCommandPalette_EscCloses(t *testing.T) {
 	m := &Model{width: 100, height: 30}
-	m.handleList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
+	m.handleList(tea.KeyPressMsg{Text: ":", Code: []rune(":")[0]})
 
-	m.handleList(tea.KeyMsg{Type: tea.KeyEsc})
+	m.handleList(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if m.inPalette {
 		t.Error("expected esc to close the palette")
 	}
@@ -80,11 +80,11 @@ func TestDetailScroll_ClampsAtEndOfContent(t *testing.T) {
 	m.openDetail(&models.Entry{Body: body})
 
 	for i := 0; i < 100; i++ {
-		m.handleDetail(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		m.handleDetail(tea.KeyPressMsg{Text: "j", Code: []rune("j")[0]})
 	}
 
 	if !m.detailVP.AtBottom() {
-		t.Errorf("expected detailVP to clamp at the bottom after scrolling far past the end, YOffset=%d", m.detailVP.YOffset)
+		t.Errorf("expected detailVP to clamp at the bottom after scrolling far past the end, YOffset=%d", m.detailVP.YOffset())
 	}
 
 	view := m.viewDetail()
@@ -118,7 +118,7 @@ func TestRenderHeatmap_FitsPanelWidthAndShowsLegend(t *testing.T) {
 func TestHelpOverlay_OpenScrollClose(t *testing.T) {
 	m := &Model{width: 100, height: 30}
 
-	m.handleList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m.handleList(tea.KeyPressMsg{Text: "?", Code: []rune("?")[0]})
 	if m.view != helpView {
 		t.Fatalf("expected helpView after '?', got %v", m.view)
 	}
@@ -128,13 +128,13 @@ func TestHelpOverlay_OpenScrollClose(t *testing.T) {
 
 	before := m.helpVP.ScrollPercent()
 	for i := 0; i < 5; i++ {
-		m.handleHelp(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		m.handleHelp(tea.KeyPressMsg{Text: "j", Code: []rune("j")[0]})
 	}
 	if m.helpVP.ScrollPercent() <= before {
 		t.Errorf("expected scroll to advance after pressing j, stayed at %v", before)
 	}
 
-	m.handleHelp(tea.KeyMsg{Type: tea.KeyEsc})
+	m.handleHelp(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if m.view != listView {
 		t.Errorf("expected esc to close help back to listView, got %v", m.view)
 	}
@@ -161,7 +161,7 @@ func TestHelpOverlay_PopupContentSurvivesComposition(t *testing.T) {
 	m := &Model{width: 100, height: 30}
 	m.openHelp()
 
-	out := m.View()
+	out := m.viewContent()
 	if !strings.Contains(out, "close") {
 		t.Errorf("expected the popup's footer text to survive compositing, got:\n%s", out)
 	}

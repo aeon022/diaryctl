@@ -2,10 +2,17 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/aeon022/diaryctl/internal/ai"
 	"github.com/aeon022/diaryctl/internal/diary"
 	"github.com/aeon022/diaryctl/internal/git"
@@ -17,11 +24,6 @@ import (
 	"github.com/aeon022/missionctl-core/overlay"
 	"github.com/aeon022/missionctl-core/palette"
 	"github.com/aeon022/missionctl-core/theme"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
 )
 
@@ -29,13 +31,13 @@ import (
 
 var (
 	// Shared across the suite via missionctl-core/theme.
-	colorGreen = theme.Green
-	colorAmber = theme.Amber
-	colorMuted = theme.Muted
-	colorRed   = theme.Red
-	selectedBg = theme.SelectedBg
-	selectedFg = theme.SelectedFg
-	colorBlue  = theme.Blue
+	colorGreen = theme.GreenV2
+	colorAmber = theme.AmberV2
+	colorMuted = theme.MutedV2
+	colorRed   = theme.RedV2
+	selectedBg = theme.SelectedBgV2
+	selectedFg = theme.SelectedFgV2
+	colorBlue  = theme.BlueV2
 )
 
 var (
@@ -47,7 +49,7 @@ var (
 	// hoverStyle matches selectedStyle's Padding(0, 1) so a hovered row
 	// renders at the same total width as a selected one (theme.Hover
 	// itself carries no padding, since that's context-specific).
-	hoverStyle = theme.Hover.Padding(0, 1)
+	hoverStyle = theme.HoverV2.Padding(0, 1)
 
 	normalStyle = lipgloss.NewStyle().Padding(0, 1)
 	mutedStyle  = lipgloss.NewStyle().Foreground(colorMuted)
@@ -109,6 +111,13 @@ type (
 	}
 	animTickMsg struct{}
 )
+
+// adaptive resolves a light/dark color pair once, at startup — v2 dropped
+// AdaptiveColor, and these package-level styles are built once, not per render.
+var adaptive = func() func(light, dark string) color.Color {
+	pick := lipgloss.LightDark(lipgloss.HasDarkBackground(os.Stdin, os.Stdout))
+	return func(light, dark string) color.Color { return pick(lipgloss.Color(light), lipgloss.Color(dark)) }
+}()
 
 // ── Model ─────────────────────────────────────────────────────────────────────
 
@@ -199,11 +208,13 @@ func newTextarea() textarea.Model {
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
 	ta.Placeholder = ""
-	ta.FocusedStyle.Base = lipgloss.NewStyle()
-	ta.BlurredStyle.Base = lipgloss.NewStyle()
-	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
-	ta.FocusedStyle.Prompt = lipgloss.NewStyle()
-	ta.BlurredStyle.Prompt = lipgloss.NewStyle()
+	st := ta.Styles()
+	st.Focused.Base = lipgloss.NewStyle()
+	st.Blurred.Base = lipgloss.NewStyle()
+	st.Focused.CursorLine = lipgloss.NewStyle()
+	st.Focused.Prompt = lipgloss.NewStyle()
+	st.Blurred.Prompt = lipgloss.NewStyle()
+	ta.SetStyles(st)
 	return ta
 }
 
@@ -230,7 +241,9 @@ var paletteCommands = []palette.Command{
 }
 
 func New(s *store.Store) *Model {
-	sp := theme.NewSpinner(mutedStyle)
+	sp := spinner.New()
+	sp.Spinner = spinner.MiniDot
+	sp.Style = mutedStyle
 	return &Model{
 		store:        s,
 		ta:           newTextarea(),
@@ -500,41 +513,45 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		return m, nil
 
-	case tea.MouseMsg:
+	case tea.MouseWheelMsg:
 		switch msg.Button {
-		case tea.MouseButtonWheelUp:
+		case tea.MouseWheelUp:
 			if m.view == listView && m.cursor > 0 {
 				m.cursor--
 			}
-		case tea.MouseButtonWheelDown:
+		case tea.MouseWheelDown:
 			if m.view == listView && m.cursor < len(m.visibleEntries())-1 {
 				m.cursor++
-			}
-		case tea.MouseButtonLeft:
-			if msg.Action != tea.MouseActionPress || m.view != listView {
-				return m, nil
-			}
-			if i := m.rowHitTest(msg.X, msg.Y); i >= 0 {
-				now := time.Now()
-				if i == m.lastClickRow && now.Sub(m.lastClickAt) < doubleClickWindow {
-					m.cursor = i
-					m.lastClickRow = -1 // consumed, so a third click starts fresh
-					e := m.visibleEntries()[i]
-					m.openDetail(&e)
-					return m, nil
-				}
-				m.cursor = i
-				m.lastClickRow = i
-				m.lastClickAt = now
-			}
-		case tea.MouseButtonNone:
-			if msg.Action == tea.MouseActionMotion && m.view == listView {
-				m.hoverRow = m.rowHitTest(msg.X, msg.Y)
 			}
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.MouseClickMsg:
+		if msg.Button != tea.MouseLeft || m.view != listView {
+			return m, nil
+		}
+		if i := m.rowHitTest(msg.X, msg.Y); i >= 0 {
+			now := time.Now()
+			if i == m.lastClickRow && now.Sub(m.lastClickAt) < doubleClickWindow {
+				m.cursor = i
+				m.lastClickRow = -1 // consumed, so a third click starts fresh
+				e := m.visibleEntries()[i]
+				m.openDetail(&e)
+				return m, nil
+			}
+			m.cursor = i
+			m.lastClickRow = i
+			m.lastClickAt = now
+		}
+		return m, nil
+
+	case tea.MouseMotionMsg:
+		if m.view == listView {
+			m.hoverRow = m.rowHitTest(msg.X, msg.Y)
+		}
+		return m, nil
+
+	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
@@ -564,7 +581,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // ── Key handlers ─────────────────────────────────────────────────────────────
 
-func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
+func (m *Model) handleList(msg tea.KeyPressMsg) tea.Cmd {
 	if m.confirmDelete {
 		if msg.String() == "y" || msg.String() == "Y" {
 			_ = m.store.DeleteEntry(m.deleteDate)
@@ -610,9 +627,9 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 			}
 			chosen := matches[m.paletteCursor]
 			m.paletteCursor = 0
-			replay := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(chosen.Key)}
+			replay := tea.KeyPressMsg{Text: chosen.Key, Code: []rune(chosen.Key)[0]}
 			if chosen.Key == "enter" {
-				replay = tea.KeyMsg{Type: tea.KeyEnter}
+				replay = tea.KeyPressMsg{Code: tea.KeyEnter}
 			}
 			return m.handleList(replay)
 		case "backspace":
@@ -726,7 +743,7 @@ func (m *Model) handleList(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func (m *Model) handleHelp(msg tea.KeyMsg) tea.Cmd {
+func (m *Model) handleHelp(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "q", "esc", "?":
 		m.view = listView
@@ -741,7 +758,7 @@ func (m *Model) handleHelp(msg tea.KeyMsg) tea.Cmd {
 // detailVP from scratch (see resizeDetailVP).
 func (m *Model) openDetail(entry *models.Entry) {
 	m.detail = entry
-	m.detailVP = viewport.New(0, 0)
+	m.detailVP = viewport.New()
 	m.resizeDetailVP()
 	m.detailVP.GotoTop()
 	m.view = detailView
@@ -775,20 +792,20 @@ func (m *Model) resizeDetailVP() {
 	if vpH < 3 {
 		vpH = 3
 	}
-	m.detailVP.Width = innerW
-	m.detailVP.Height = vpH
+	m.detailVP.SetWidth(innerW)
+	m.detailVP.SetHeight(vpH)
 	m.detailVP.SetContent(lipgloss.NewStyle().Width(innerW).Render(renderMarkdown(m.detail.Body)))
 }
 
-func (m *Model) handleDetail(msg tea.KeyMsg) tea.Cmd {
+func (m *Model) handleDetail(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc", "q":
 		m.view = listView
 		m.detail = nil
 	case "j", "down":
-		m.detailVP.LineDown(1)
+		m.detailVP.ScrollDown(1)
 	case "k", "up":
-		m.detailVP.LineUp(1)
+		m.detailVP.ScrollUp(1)
 	case "e":
 		if m.detail != nil {
 			return m.openEditor(m.detail)
@@ -809,7 +826,7 @@ func (m *Model) handleDetail(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-func (m *Model) handleEditor(msg tea.KeyMsg) tea.Cmd {
+func (m *Model) handleEditor(msg tea.KeyPressMsg) tea.Cmd {
 	// Vim normal mode — intercept keys before passing to textarea.
 	if m.vimNormal {
 		switch msg.String() {
@@ -817,27 +834,27 @@ func (m *Model) handleEditor(msg tea.KeyMsg) tea.Cmd {
 			m.vimNormal = false
 		case "h":
 			var cmd tea.Cmd
-			m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyLeft})
+			m.ta, cmd = m.ta.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 			return cmd
 		case "l":
 			var cmd tea.Cmd
-			m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyRight})
+			m.ta, cmd = m.ta.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 			return cmd
 		case "j":
 			var cmd tea.Cmd
-			m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyDown})
+			m.ta, cmd = m.ta.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 			return cmd
 		case "k":
 			var cmd tea.Cmd
-			m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyUp})
+			m.ta, cmd = m.ta.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 			return cmd
 		case "0":
 			var cmd tea.Cmd
-			m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyHome})
+			m.ta, cmd = m.ta.Update(tea.KeyPressMsg{Code: tea.KeyHome})
 			return cmd
 		case "$":
 			var cmd tea.Cmd
-			m.ta, cmd = m.ta.Update(tea.KeyMsg{Type: tea.KeyEnd})
+			m.ta, cmd = m.ta.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 			return cmd
 		case "ctrl+s":
 			m.save()
@@ -934,7 +951,7 @@ func (m *Model) handleEditor(msg tea.KeyMsg) tea.Cmd {
 	return cmd
 }
 
-func (m *Model) handleRepo(msg tea.KeyMsg) tea.Cmd {
+func (m *Model) handleRepo(msg tea.KeyPressMsg) tea.Cmd {
 	if m.confirmDeleteRepo {
 		if msg.String() == "y" || msg.String() == "Y" {
 			r := m.repos[m.repoCursor]
@@ -1069,7 +1086,16 @@ func (m *Model) visibleEntries() []models.Entry {
 
 // ── View ──────────────────────────────────────────────────────────────────────
 
-func (m *Model) View() string {
+func (m *Model) View() tea.View {
+	v := tea.NewView(m.viewContent())
+	// v1's tea.WithAltScreen()/WithMouseAllMotion() Program options are gone
+	// in v2 — they are per-View fields now.
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeAllMotion
+	return v
+}
+
+func (m *Model) viewContent() string {
 	if m.err != nil {
 		return redStyle.Render("Error: "+m.err.Error()) + "\n\nPress q to quit."
 	}
@@ -1137,7 +1163,7 @@ func (m *Model) openHelp() {
 		popW = 40
 	}
 
-	vp := viewport.New(popW-6, popH-5) // border 1+1, padding(1,2) → 2 rows/4 cols; -1 row for footer
+	vp := viewport.New(viewport.WithWidth(popW-6), viewport.WithHeight(popH-5)) // border 1+1, padding(1,2) → 2 rows/4 cols; -1 row for footer
 	vp.SetContent(m.helpContent())
 
 	m.helpVP = vp
@@ -1151,7 +1177,7 @@ func (m *Model) openHelp() {
 // the whole screen — the list stays visible around it.
 func (m *Model) renderHelpPopup() string {
 	footer := "esc / ?  close"
-	if m.helpVP.TotalLineCount() > m.helpVP.Height {
+	if m.helpVP.TotalLineCount() > m.helpVP.Height() {
 		footer = fmt.Sprintf("j/k scroll (%d%%)  ·  %s", int(m.helpVP.ScrollPercent()*100), footer)
 	}
 	body := m.helpVP.View() + "\n" + mutedStyle.Render(footer)
@@ -1268,10 +1294,10 @@ func (m *Model) viewList() string {
 // heatLevels is the shared 5-tier commit-count gradient, index 0 = none.
 var heatLevels = [5]lipgloss.Style{
 	mutedStyle,
-	lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#86efac", Dark: "#276749"}),
-	lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#4ade80", Dark: "#38a169"}),
-	lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#22c55e", Dark: "#48bb78"}),
-	lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#16a34a", Dark: "#68d391"}),
+	lipgloss.NewStyle().Foreground(adaptive("#86efac", "#276749")),
+	lipgloss.NewStyle().Foreground(adaptive("#4ade80", "#38a169")),
+	lipgloss.NewStyle().Foreground(adaptive("#22c55e", "#48bb78")),
+	lipgloss.NewStyle().Foreground(adaptive("#16a34a", "#68d391")),
 }
 
 func heatLevel(cnt int) int {
@@ -1635,7 +1661,7 @@ func (m *Model) viewDetail() string {
 	body := panelStyle.Width(w - 4).Render(m.detailVP.View())
 
 	footer := "j/k scroll  e edit  d delete  g open note  esc back"
-	if m.detailVP.TotalLineCount() > m.detailVP.Height {
+	if m.detailVP.TotalLineCount() > m.detailVP.Height() {
 		footer = fmt.Sprintf("j/k scroll (%d%%)  ·  %s", int(m.detailVP.ScrollPercent()*100), footer)
 	}
 
@@ -1894,11 +1920,28 @@ func plural(n int) string {
 	return "s"
 }
 
+// motionThrottleFilter drops MouseMotionMsg messages arriving <16ms apart —
+// all-motion mouse mode otherwise re-renders on every pixel of movement.
+func motionThrottleFilter() func(tea.Model, tea.Msg) tea.Msg {
+	var lastMotion time.Time
+	return func(_ tea.Model, msg tea.Msg) tea.Msg {
+		if _, ok := msg.(tea.MouseMotionMsg); !ok {
+			return msg
+		}
+		now := time.Now()
+		if now.Sub(lastMotion) < 16*time.Millisecond {
+			return nil
+		}
+		lastMotion = now
+		return msg
+	}
+}
+
 // ── Run ───────────────────────────────────────────────────────────────────────
 
 func Run(s *store.Store) error {
 	m := New(s)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithFPS(30))
+	p := tea.NewProgram(m, tea.WithFilter(motionThrottleFilter()), tea.WithFPS(30))
 	_, err := p.Run()
 	return err
 }
