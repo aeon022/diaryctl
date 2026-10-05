@@ -200,9 +200,15 @@ func TodayHabits() ([]HabitStatus, error) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT id, name FROM habits ORDER BY created_at ASC`)
+	// Archived habits are retired — leave them out, like habctl itself does.
+	// A habctl DB from before the archived column (migration 8) has none, so
+	// fall back to the plain query rather than showing no habits at all.
+	rows, err := db.Query(`SELECT id, name FROM habits WHERE archived = 0 ORDER BY created_at ASC`)
 	if err != nil {
-		return nil, nil
+		rows, err = db.Query(`SELECT id, name FROM habits ORDER BY created_at ASC`)
+		if err != nil {
+			return nil, nil
+		}
 	}
 	defer rows.Close()
 
@@ -240,6 +246,9 @@ func TodayHabits() ([]HabitStatus, error) {
 				h.id, day,
 			).Scan(&c)
 			if c == 0 {
+				if i == 0 {
+					continue // today isn't over yet — not checked yet is not a miss
+				}
 				break
 			}
 			streak++
