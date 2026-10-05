@@ -100,16 +100,17 @@ func cmdLoadTodaySummary(s *store.Store) tea.Cmd {
 	}
 }
 
-// copyToClipboardCmd shells out to pbcopy — same approach taskctl/mailctl/
-// notectl/calctl/habctl/timectl use for their own "y" copy shortcuts, no
-// clipboard library needed.
+// copyToClipboardCmd copies text two ways: OSC 52 (tea.SetClipboard — works
+// over SSH/tmux in terminals that allow it) and pbcopy (Terminal.app and
+// anything that ignores OSC 52). Same pbcopy approach as taskctl/mailctl/
+// notectl/calctl/habctl/timectl use for their "y" shortcuts.
 func copyToClipboardCmd(text string) tea.Cmd {
-	return func() tea.Msg {
+	return tea.Batch(tea.SetClipboard(text), func() tea.Msg {
 		cmd := exec.Command("pbcopy")
 		cmd.Stdin = strings.NewReader(text)
 		_ = cmd.Run()
 		return nil
-	}
+	})
 }
 
 // jumpToNoteCmd shells out to `notectl --open <path>` to jump straight to
@@ -190,6 +191,19 @@ func waitForAI(ch chan ai.StreamResult) tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
+	case tea.FocusMsg:
+		// Back from another window: entries may have changed (a note written
+		// by another tool or machine on a shared data_dir). Reload — but only
+		// from the plain list, never from the editor/detail/search/palette/
+		// confirm states, so no unsaved text or typed query is ever
+		// disturbed, and at most once per 5s.
+		if m.view == listView && !m.searching && !m.inPalette && !m.confirmDelete &&
+			!m.loading && time.Since(m.lastLoad) > 5*time.Second {
+			m.lastLoad = time.Now()
+			return m, cmdLoadEntries(m.store)
+		}
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		// -1: reserves one row of slack so View() output never has exactly
@@ -210,6 +224,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case entriesLoadedMsg:
 		m.entries = msg.entries
+		m.lastLoad = time.Now()
+		if m.cursor >= len(m.entries) { // entries can shrink under us (focus reload)
+			m.cursor = max(0, len(m.entries)-1)
+		}
 		m.streak, _ = m.store.GetStreak()
 		m.loading = false
 		return m, nil

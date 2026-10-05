@@ -76,6 +76,7 @@ type Model struct {
 
 	// list
 	entries      []models.Entry
+	lastLoad     time.Time // last entries (re)load; throttles the window-focus reload
 	cursor       int
 	hoverRow     int // visibleEntries() index under the mouse cursor, -1 when none
 	lastClickRow int // visibleEntries() index of the previous left-click, -1 when none — double-click opens the entry detail, same window/pattern taskctl uses
