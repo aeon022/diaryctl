@@ -7,8 +7,10 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"go.yaml.in/yaml/v4"
 	_ "modernc.org/sqlite"
 )
 
@@ -40,7 +42,7 @@ type TimeEntry struct {
 // TodayTasks returns tasks completed today from taskctl's database.
 // Returns an empty slice (no error) if taskctl is not installed.
 func TodayTasks() ([]CompletedTask, error) {
-	path, err := ExpandPath("~/Library/Application Support/taskctl/taskctl.db")
+	path, err := toolDB("taskctl", "taskctl.db", "~/Library/Application Support/taskctl/taskctl.db", "~/.config/taskctl/config.yaml")
 	if err != nil {
 		return nil, nil
 	}
@@ -58,7 +60,7 @@ func TodayTasks() ([]CompletedTask, error) {
 		SELECT title, list, completed_at
 		FROM tasks
 		WHERE status = 'completed'
-		  AND date(completed_at) = date('now')
+		  AND date(completed_at, 'localtime') = date('now', 'localtime')
 		ORDER BY completed_at
 	`)
 	if err != nil {
@@ -82,7 +84,7 @@ func TodayTasks() ([]CompletedTask, error) {
 // TodayEvents returns calendar events for today from calctl's database.
 // Returns an empty slice (no error) if calctl is not installed.
 func TodayEvents() ([]CalendarEvent, error) {
-	path, err := ExpandPath("~/Library/Application Support/calctl/calctl.db")
+	path, err := toolDB("calctl", "calctl.db", "~/Library/Application Support/calctl/calctl.db", "~/Library/Application Support/calctl/config.yaml")
 	if err != nil {
 		return nil, nil
 	}
@@ -99,7 +101,7 @@ func TodayEvents() ([]CalendarEvent, error) {
 	rows, err := db.Query(`
 		SELECT title, start_time, end_time, calendar, location
 		FROM events
-		WHERE date(start_time) = date('now')
+		WHERE date(start_time, 'localtime') = date('now', 'localtime')
 		ORDER BY start_time
 	`)
 	if err != nil {
@@ -124,7 +126,7 @@ func TodayEvents() ([]CalendarEvent, error) {
 // TodayTimeEntries returns completed time entries for today from timectl's database.
 // Returns an empty slice (no error) if timectl is not installed.
 func TodayTimeEntries() ([]TimeEntry, error) {
-	path, err := ExpandPath("~/.local/share/timectl/time.db")
+	path, err := toolDB("timectl", "time.db", "~/.local/share/timectl/time.db")
 	if err != nil {
 		return nil, nil
 	}
@@ -141,7 +143,7 @@ func TodayTimeEntries() ([]TimeEntry, error) {
 	rows, err := db.Query(`
 		SELECT task, project, started_at, stopped_at
 		FROM entries
-		WHERE date(started_at) = date('now')
+		WHERE date(started_at, 'localtime') = date('now', 'localtime')
 		  AND stopped_at IS NOT NULL
 		ORDER BY started_at
 	`)
@@ -184,7 +186,7 @@ type HabitStatus struct {
 // TodayHabits returns all habits with today's status from habctl's database.
 // Returns an empty slice (no error) if habctl is not installed.
 func TodayHabits() ([]HabitStatus, error) {
-	path, err := ExpandPath("~/.local/share/habctl/habits.db")
+	path, err := toolDB("habctl", "habits.db", "~/.local/share/habctl/habits.db")
 	if err != nil {
 		return nil, nil
 	}
@@ -262,4 +264,40 @@ func ExpandPath(path string) (string, error) {
 		return filepath.Join(home, path[1:]), nil
 	}
 	return path, nil
+}
+
+// toolDB resolves another suite tool's database the way that tool itself
+// does: <TOOL>_DATA_DIR from the environment first, then a data_dir key in
+// that tool's config file (cfgFiles, first that has one), else its private
+// default. Without this, a tool whose data lives in a synced folder (Dropbox,
+// iCloud) looks empty to the diary.
+func toolDB(tool, file, def string, cfgFiles ...string) (string, error) {
+	dir := os.Getenv(strings.ToUpper(tool) + "_DATA_DIR")
+	for _, cf := range cfgFiles {
+		if dir != "" {
+			break
+		}
+		p, err := ExpandPath(cf)
+		if err != nil {
+			continue
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var c struct {
+			DataDir string `yaml:"data_dir"`
+		}
+		if yaml.Unmarshal(b, &c) == nil {
+			dir = c.DataDir
+		}
+	}
+	if dir == "" {
+		return ExpandPath(def)
+	}
+	dir, err := ExpandPath(dir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, file), nil
 }

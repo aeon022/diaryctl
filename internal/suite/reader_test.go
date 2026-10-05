@@ -76,3 +76,26 @@ func TestTodayTasksReadsOnlyTodaysCompleted(t *testing.T) {
 		t.Error("CompletedAt not parsed")
 	}
 }
+
+func TestToolDBResolution(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("TASKCTL_DATA_DIR", "")
+
+	def := filepath.Join(home, "Library/Application Support/taskctl/taskctl.db")
+	if got, _ := toolDB("taskctl", "taskctl.db", "~/Library/Application Support/taskctl/taskctl.db", "~/.config/taskctl/config.yaml"); got != def {
+		t.Errorf("default = %q, want %q", got, def)
+	}
+
+	cfg := filepath.Join(home, ".config/taskctl")
+	os.MkdirAll(cfg, 0o755)
+	os.WriteFile(filepath.Join(cfg, "config.yaml"), []byte("data_dir: ~/Dropbox/tasks\n"), 0o644)
+	if got, _ := toolDB("taskctl", "taskctl.db", "x", "~/.config/taskctl/config.yaml"); got != filepath.Join(home, "Dropbox/tasks/taskctl.db") {
+		t.Errorf("config data_dir = %q", got)
+	}
+
+	t.Setenv("TASKCTL_DATA_DIR", "/shared/t")
+	if got, _ := toolDB("taskctl", "taskctl.db", "x", "~/.config/taskctl/config.yaml"); got != "/shared/t/taskctl.db" {
+		t.Errorf("env must win over config, got %q", got)
+	}
+}
