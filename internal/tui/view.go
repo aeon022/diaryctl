@@ -9,9 +9,11 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/aeon022/diaryctl/internal/diary"
+	"github.com/aeon022/missionctl-core/emptystate"
 	"github.com/aeon022/missionctl-core/keymap"
 	"github.com/aeon022/missionctl-core/overlay"
 	"github.com/aeon022/missionctl-core/palette"
+	"github.com/aeon022/missionctl-core/statusbar"
 )
 
 // ── View ──────────────────────────────────────────────────────────────────────
@@ -41,7 +43,7 @@ func (m *Model) viewContent() string {
 		// "?" is only reachable from the main list, so the list is always
 		// the correct background to keep visible behind the popup. No
 		// enclosing border on the list view, so inset 0 is safe.
-		return overlay.Center(m.viewList(), m.renderHelpPopup(), m.width, m.height, 0)
+		return overlay.CenterDim(m.viewList(), m.renderHelpPopup(), m.width, m.height, 0)
 	default:
 		return m.viewList()
 	}
@@ -440,9 +442,9 @@ func (m *Model) renderEntryList(width, height int) string {
 	entries := m.visibleEntries()
 	if len(entries) == 0 {
 		if m.loading {
-			lines = append(lines, "", "  "+m.sp.View()+mutedStyle.Render(" Loading entries…"))
+			lines = append(lines, "", emptystate.Loading(0, 0, m.sp.View(), "Loading entries…"))
 		} else {
-			lines = append(lines, "", mutedStyle.Render("No entries yet — press n to generate today's entry."))
+			lines = append(lines, "", emptystate.Render(0, 0, "", "No entries yet", "press n to generate today's entry."))
 		}
 		return strings.Join(lines, "\n")
 	}
@@ -591,15 +593,18 @@ func (m *Model) viewDetail() string {
 
 	body := panelStyle.Width(w - 4).Render(m.detailVP.View())
 
-	footer := "j/k scroll  e edit  d delete  g open note  esc back"
+	scroll := ""
 	if m.detailVP.TotalLineCount() > m.detailVP.Height() {
-		footer = fmt.Sprintf("j/k scroll (%d%%)  ·  %s", int(m.detailVP.ScrollPercent()*100), footer)
+		scroll = mutedStyle.Render(fmt.Sprintf("%d%%", int(m.detailVP.ScrollPercent()*100)))
 	}
+	footer := statusbar.Line(w, statusbar.Hints(w-lipgloss.Width(scroll)-1,
+		[2]string{"esc", "back"}, [2]string{"j/k", "scroll"}, [2]string{"e", "edit"},
+		[2]string{"d", "delete"}, [2]string{"g", "open note"}), scroll)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		body,
-		helpStyle.Render(footer),
+		footer,
 	)
 }
 
@@ -696,10 +701,7 @@ func (m *Model) viewRepos() string {
 	var lines []string
 	lines = append(lines, m.renderHeader("Repos"), "")
 	if len(m.repos) == 0 {
-		lines = append(lines,
-			mutedStyle.Render("No repos registered."),
-			mutedStyle.Render("Run: diaryctl init [path]"),
-		)
+		lines = append(lines, emptystate.Render(0, 0, "", "No repos registered", "run: diaryctl init [path]"))
 	} else {
 		for i, r := range m.repos {
 			line := fmt.Sprintf("%-20s %s", r.Name, r.Path)
@@ -719,7 +721,8 @@ func (m *Model) viewRepos() string {
 	case m.message != "" && time.Since(m.msgAt) < undoWindow:
 		footer = greenStyle.Render(m.message)
 	default:
-		footer = helpStyle.Render("j/k:navigate  d:delete  u:undo  esc:back")
+		footer = statusbar.Hints(m.width, [2]string{"esc", "back"}, [2]string{"j/k", "navigate"},
+			[2]string{"d", "delete"}, [2]string{"u", "undo"})
 	}
 	lines = append(lines, "")
 
