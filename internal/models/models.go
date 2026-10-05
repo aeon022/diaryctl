@@ -38,8 +38,8 @@ type DayStats struct {
 type Entry struct {
 	ID        int64
 	Date      time.Time
-	Body      string    // markdown
-	Generated bool      // true if AI-generated via MCP
+	Body      string // markdown
+	Generated bool   // true if AI-generated via MCP
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
