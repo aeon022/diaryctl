@@ -39,7 +39,7 @@ diaryctl
 Three ways to let Claude write the narrative:
 
 ### 1 — In-TUI (press `a`)
-Open any entry in the editor and press `a`. Claude streams the narrative live into the `<!-- AI: -->` sections. Needs `ANTHROPIC_API_KEY` in your environment.
+Open any entry in the editor and press `ctrl+g`. Claude streams the narrative live into the `<!-- AI: -->` sections. Needs `ANTHROPIC_API_KEY` in your environment.
 
 ```
 export ANTHROPIC_API_KEY=sk-ant-...

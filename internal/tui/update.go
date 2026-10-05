@@ -399,13 +399,9 @@ func (m *Model) handleList(msg tea.KeyPressMsg) tea.Cmd {
 			}
 			return m.handleList(replay)
 		case "backspace":
-			if len(m.paletteQuery) > 0 {
-				m.paletteQuery = m.paletteQuery[:len(m.paletteQuery)-1]
-			}
+			m.paletteQuery = dropLastRune(m.paletteQuery)
 		default:
-			if len(msg.String()) == 1 {
-				m.paletteQuery += msg.String()
-			}
+			m.paletteQuery += typedText(msg)
 		}
 		return nil
 	}
@@ -419,13 +415,13 @@ func (m *Model) handleList(msg tea.KeyPressMsg) tea.Cmd {
 		case "enter":
 			m.searching = false
 		case "backspace":
-			if len(m.searchQuery) > 0 {
-				m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+			if m.searchQuery != "" {
+				m.searchQuery = dropLastRune(m.searchQuery)
 				m.filterEntries()
 			}
 		default:
-			if len(msg.String()) == 1 {
-				m.searchQuery += msg.String()
+			if t := typedText(msg); t != "" {
+				m.searchQuery += t
 				m.filterEntries()
 			}
 		}
@@ -592,7 +588,52 @@ func (m *Model) handleDetail(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
+// startAI streams an AI continuation of the open entry into the editor. It is
+// bound to ctrl+g (works in insert and vim-normal mode): a plain letter can't
+// be the trigger in a text editor, or that letter could never be typed.
+func (m *Model) startAI() tea.Cmd {
+	if m.aiGenerating {
+		return nil
+	}
+	m.aiGenerating = true
+	m.aiTokens = 0
+	m.aiBeforeContent = m.ta.Value()
+	m.aiChan = make(chan ai.StreamResult, 64)
+	body := m.ta.Value()
+	ch := m.aiChan
+	return tea.Batch(
+		func() tea.Msg {
+			go ai.Stream(body, ch)
+			return nil
+		},
+		waitForAI(ch),
+	)
+}
+
+// typedText is the printable text of a key press ("" for ctrl/alt chords and
+// named keys). Unlike len(msg.String()) == 1 it accepts space (String() is
+// "space" in Bubble Tea v2) and multi-byte letters such as ü.
+func typedText(msg tea.KeyPressMsg) string {
+	if msg.Mod&(tea.ModCtrl|tea.ModAlt) != 0 {
+		return ""
+	}
+	return msg.Text
+}
+
+// dropLastRune removes the final rune (not byte) so backspace can't leave a
+// half-encoded character behind.
+func dropLastRune(s string) string {
+	r := []rune(s)
+	if len(r) == 0 {
+		return s
+	}
+	return string(r[:len(r)-1])
+}
+
 func (m *Model) handleEditor(msg tea.KeyPressMsg) tea.Cmd {
+	if msg.String() == "ctrl+g" {
+		return m.startAI()
+	}
 	// Vim normal mode — intercept keys before passing to textarea.
 	if m.vimNormal {
 		switch msg.String() {
@@ -657,24 +698,6 @@ func (m *Model) handleEditor(msg tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+v":
 		m.vimNormal = true
 		return nil
-
-	case "a":
-		if m.aiGenerating {
-			return nil
-		}
-		m.aiGenerating = true
-		m.aiTokens = 0
-		m.aiBeforeContent = m.ta.Value()
-		m.aiChan = make(chan ai.StreamResult, 64)
-		body := m.ta.Value()
-		ch := m.aiChan
-		return tea.Batch(
-			func() tea.Msg {
-				go ai.Stream(body, ch)
-				return nil
-			},
-			waitForAI(ch),
-		)
 
 	case "ctrl+f":
 		m.centeredMode = !m.centeredMode

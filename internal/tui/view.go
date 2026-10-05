@@ -70,7 +70,7 @@ func (m *Model) helpContent() string {
 		Section("Editor").
 		Row("ctrl+s", "save").
 		Row("esc", "save (if dirty) and close").
-		Row("a", "ask AI to continue the entry").
+		Row("ctrl+g", "ask AI to continue the entry").
 		Row("ctrl+f", "toggle centered writing mode").
 		Row("ctrl+v", "vim normal mode (hjkl, i/a/o to insert)").
 		Row("tab/[/]", "jump to next AI marker / section").
@@ -640,9 +640,9 @@ func (m *Model) viewEditor() string {
 
 	statusLeft := statusStyle.Render(date + wcStr + secStr + saveStr + modeStr)
 
-	aKey := "a ask claude"
+	aKey := "ctrl+g ask claude"
 	if m.aiGenerating {
-		aKey = "a writing…"
+		aKey = "ctrl+g writing…"
 	}
 	vimHint := "ctrl+v vim"
 	if m.vimNormal {
