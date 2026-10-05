@@ -42,7 +42,8 @@ func repoCommits(repo models.Repo, since, until string) ([]models.CommitStat, er
 		"log",
 		"--since=" + since,
 		"--until=" + until,
-		"--pretty=format:%H|%s|%an|%ai",
+		// \x1f (unit separator), not "|": subjects routinely contain pipes.
+		"--pretty=format:%H%x1f%s%x1f%an%x1f%ai",
 		"--no-merges",
 	}
 	out, err := runGit(args...)
@@ -60,7 +61,7 @@ func repoCommits(repo models.Repo, since, until string) ([]models.CommitStat, er
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "|", 4)
+		parts := strings.SplitN(line, "\x1f", 4)
 		if len(parts) < 4 {
 			continue
 		}

@@ -93,3 +93,21 @@ func TestBuildEntryBodyEmptyDay(t *testing.T) {
 		}
 	}
 }
+
+func TestWordCount(t *testing.T) {
+	cases := map[string]int{
+		"":                        0,
+		"   \n\t ":                0,
+		"one":                     1,
+		"one two":                 2,
+		"  leading and trailing ": 3,
+		"tabs\tand\nnewlines":     3,
+		"über größe":              2, // multi-byte letters are not separators
+		"a b":                     2, // non-breaking space counts as whitespace
+	}
+	for in, want := range cases {
+		if got := WordCount(in); got != want {
+			t.Errorf("WordCount(%q) = %d, want %d", in, got, want)
+		}
+	}
+}

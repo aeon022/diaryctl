@@ -299,12 +299,18 @@ func (s *Store) GetStreak() (int, error) {
 		return 0, nil
 	}
 
-	today := time.Now().Truncate(24 * time.Hour)
+	// Entry dates are calendar days (parsed as UTC midnight), so "today" must be
+	// the LOCAL calendar day expressed the same way — time.Now().Truncate(24h)
+	// is the UTC day, which near local midnight is a day off and made a streak
+	// read 0 for the first hours of the day east of UTC.
+	now := time.Now()
+	expected := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	streak := 0
-	expected := today
-	for _, d := range dates {
-		d = d.Truncate(24 * time.Hour)
-		if d.Equal(expected) || d.Equal(expected.AddDate(0, 0, -1)) {
+	for i, d := range dates {
+		// A streak may still be "alive" without today's entry yet, but only at
+		// its head: that grace day must not be allowed again further back, or
+		// a one-day gap anywhere would be silently bridged.
+		if d.Equal(expected) || (i == 0 && d.Equal(expected.AddDate(0, 0, -1))) {
 			streak++
 			expected = d.AddDate(0, 0, -1)
 		} else {
