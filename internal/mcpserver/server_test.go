@@ -74,14 +74,14 @@ func callTool(t *testing.T, srv *mcpserver.MCPServer, name string, args map[stri
 	if !ok {
 		t.Fatalf("expected a JSON-RPC response for %q, got %T: %+v", name, msg, msg)
 	}
-	res, ok := resp.Result.(mcp.CallToolResult)
+	res, ok := resp.Result.(*mcp.CallToolResult)
 	if !ok {
 		t.Fatalf("expected mcp.CallToolResult for %q, got %T", name, resp.Result)
 	}
 	if res.IsError {
 		t.Fatalf("handler for %q returned an error result: %+v", name, res.Content)
 	}
-	return &res
+	return res
 }
 
 func resultText(t *testing.T, res *mcp.CallToolResult) string {
@@ -139,7 +139,7 @@ func TestWriteDiaryEntryRequiresBody(t *testing.T) {
 	raw, _ := json.Marshal(req)
 	msg := srv.HandleMessage(context.Background(), raw)
 	resp := msg.(mcp.JSONRPCResponse)
-	res := resp.Result.(mcp.CallToolResult)
+	res := resp.Result.(*mcp.CallToolResult)
 	if !res.IsError {
 		t.Fatal("expected an error result when body is missing")
 	}
