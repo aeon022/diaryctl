@@ -6,7 +6,8 @@ require (
 	charm.land/bubbles/v2 v2.1.1
 	charm.land/bubbletea/v2 v2.0.9
 	charm.land/lipgloss/v2 v2.0.6
-	github.com/aeon022/missionctl-core v0.0.0-20261006115721-4d607e57752d
+	github.com/aeon022/missionctl-core v0.0.0-20261006121953-121c3c94b308
+	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/mark3labs/mcp-go v0.55.1
 	github.com/sahilm/fuzzy v0.1.3
@@ -26,7 +27,6 @@ require (
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/lipgloss v1.1.0 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260811164956-006e29f97886 // indirect
-	github.com/charmbracelet/x/ansi v0.11.8 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
