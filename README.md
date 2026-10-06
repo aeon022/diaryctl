@@ -2,7 +2,7 @@
 
 Developer diary powered by git history and AI. Part of the [missionctl](https://missionctl.sh) suite.
 
-Reads your commits, completed tasks, calendar events, and time logs. Generates a structured diary template. Press `a` in the editor and Claude writes the narrative — or let the daemon handle it automatically at end of day.
+Reads your commits, completed tasks, calendar events, and time logs. Generates a structured diary template. Press `ctrl+g` in the editor and Claude writes the narrative — or let the daemon handle it automatically at end of day.
 
 ---
 
@@ -38,12 +38,12 @@ diaryctl
 
 Three ways to let Claude write the narrative:
 
-### 1 — In-TUI (press `a`)
+### 1 — In-TUI (press `ctrl+g`)
 Open any entry in the editor and press `ctrl+g`. Claude streams the narrative live into the `<!-- AI: -->` sections. Needs `ANTHROPIC_API_KEY` in your environment.
 
 ```
 export ANTHROPIC_API_KEY=sk-ant-...
-diaryctl          # open TUI → select entry → e → a
+diaryctl          # open TUI → select entry → e → ctrl+g
 ```
 
 ### 2 — Auto-daemon (fully hands-free)
@@ -67,10 +67,13 @@ When other missionctl apps are installed, diaryctl automatically pulls in:
 - **taskctl** — completed tasks for today
 - **calctl** — calendar events for today
 - **timectl** — time log entries for today
+- **habctl** — today's habit check-ins and streaks
 
 All three appear as sections in the diary template. diaryctl reads each sister app's
 SQLite database directly and read-only (`internal/suite`) — it never shells out to the
-other CLIs. If a sister database doesn't exist yet (app not installed, or `sync` never
+other CLIs. It finds each database the way that tool does: `<TOOL>_DATA_DIR` from your
+environment first, then `data_dir` in taskctl's / calctl's config file, else the default
+location. If a sister database doesn't exist yet (app not installed, or `sync` never
 run), that section is simply omitted: no error, no crash, nothing to configure. Once
 the other app is installed and has synced data, its section appears automatically on
 the next entry generation.
@@ -115,7 +118,7 @@ q              quit
 ```
 ctrl+s         save
 esc            save and back to list
-a              ask Claude to write the narrative (streams live)
+ctrl+g         ask Claude to write the narrative (streams live)
 tab            jump to next <!-- AI: --> block
 [ / ]          jump to previous / next ## section
 ctrl+f         toggle centered writing mode (72-char column)
@@ -170,6 +173,26 @@ export DIARYCTL_DATA_DIR="$HOME/Library/Mobile Documents/com~apple~CloudDocs/dia
 ```
 
 Once set, diaryctl automatically switches its SQLite journal mode from WAL to rollback-journal — WAL splits the database across multiple files that a folder-sync client can't update atomically together, so this switch keeps the directory down to a single consistent file whenever diaryctl isn't actively writing. A same-machine lock also prevents two diaryctl processes from opening the database at once (run `diaryctl doctor` to see the current mode and path). This only protects against the same-machine and stale-snapshot failure modes, not two machines editing at the exact same instant; an undownloaded iCloud file is reported explicitly rather than as a bare error.
+
+## Recent changes (October 2026)
+
+- **Window focus.** When the terminal window regains focus, the list reloads from the local database — at most every 5 seconds, and only while you are just browsing (never while a form, editor, search, palette or confirmation is open, so nothing you are typing is lost). Terminals that don't report focus events simply never trigger it. The editor is never reloaded.
+
+- **Clipboard.** `y` copies the selected entry's date — now through OSC 52 as well as `pbcopy`, so it also works over SSH and inside tmux (your terminal must allow OSC 52; locally `pbcopy` still does the job).
+
+- **Footer and empty states.** The key-hint footer is the suite-wide one: it never wraps and drops the least important hints first on narrow terminals. Empty lists and loading screens show a short message with a hint what to press.
+
+- **AI key is now `ctrl+g`.** In the editor (insert and vim-normal mode) `ctrl+g` asks Claude to continue the entry. The plain letter `a` used to start the AI, so every `a` you typed in the text triggered it.
+
+- **Typing.** The search box and command palette now accept spaces and umlauts, and backspace removes a whole character.
+
+- **Other tools' data.** The suite sections (tasks, events, time, habits) are read from each tool's real database: `<TOOL>_DATA_DIR` first (e.g. `TASKCTL_DATA_DIR`), then `data_dir` in taskctl's and calctl's config file, else the tool's default location — so data kept in Dropbox/iCloud is found. "Today" is your local day, not UTC.
+
+- **Streaks.** The diary streak no longer bridges gaps and no longer reads 0 shortly after local midnight; archived habits are not listed; a `|` in a commit subject no longer corrupts the git summary.
+
+- The TUI now runs on Bubble Tea v2; key bindings are unchanged.
+
+---
 
 ## Architecture
 
