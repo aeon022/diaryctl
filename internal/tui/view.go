@@ -14,6 +14,8 @@ import (
 	"github.com/aeon022/missionctl-core/overlay"
 	"github.com/aeon022/missionctl-core/palette"
 	"github.com/aeon022/missionctl-core/statusbar"
+	"github.com/aeon022/missionctl-core/ui"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // ── View ──────────────────────────────────────────────────────────────────────
@@ -168,12 +170,19 @@ func (m *Model) viewList() string {
 	panelH := m.panelHeight()
 
 	left := panelStyle.Width(heatW).Height(panelH).Render(m.renderHeatmap())
-	right := panelStyle.Width(listW).Height(panelH).Render(m.renderEntryList(listW, panelH))
+	// lipgloss v2: Width includes the panel border (2) and padding (2), so the
+	// rows must be built for listW-4 cells or every row wraps inside the box.
+	right := panelStyle.Width(listW).Height(panelH).Render(m.renderEntryList(listW-4, panelH))
 	top := lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 
-	helpText := "j/k:navigate  enter:open  n:new  e:edit  d:delete  u:undo  y:copy  g:open note  r:repos  /:search  ?:help  q:quit"
+	// One-line footer: contextual hints on the left (priority order, the last
+	// ones drop first on a narrow terminal), the flash message on the right.
+	hints := statusbar.Hints(w,
+		[2]string{"enter", "open"}, [2]string{"n", "new"}, [2]string{"?", "help"}, [2]string{"q", "quit"},
+		[2]string{"j/k", "move"}, [2]string{"e", "edit"}, [2]string{"d", "delete"}, [2]string{"u", "undo"},
+		[2]string{"/", "search"}, [2]string{"y", "copy"}, [2]string{"g", "note"}, [2]string{"r", "repos"})
 	if m.confirmDelete {
-		helpText = redStyle.Render(fmt.Sprintf(
+		hints = redStyle.Render(fmt.Sprintf(
 			"Delete %s? y = confirm, any other key = cancel",
 			m.deleteDate.Format("2006-01-02"),
 		))
@@ -185,46 +194,38 @@ func (m *Model) viewList() string {
 		flashDur = undoWindow
 	}
 	if m.message != "" && time.Since(m.msgAt) < flashDur {
-		msg = "  " + greenStyle.Render(m.message)
+		msg = greenStyle.Render(m.message)
 	}
+	footer := statusbar.Line(w, hints, msg)
 
-	// Streak with pulsing animation for streaks > 7 days.
+	// Header: title left, "<n> entries · streak Nd · today …" in the middle
+	// (streak keeps its pulsing flame above 7 days), date right. This replaces
+	// the old Today / Recent Entries / streak lines under the panels — the
+	// recent entries just repeated the list above.
 	streakStr := amberStyle.Render(fmt.Sprintf("streak %dd", m.streak))
 	if m.streak > 7 {
-		var flame string
-		if m.tickCount%2 == 0 {
-			flame = amberStyle.Render("🔥 ")
-		} else {
+		flame := amberStyle.Render("🔥 ")
+		if m.tickCount%2 != 0 {
 			flame = redStyle.Render("🔥 ")
 		}
 		streakStr = flame + streakStr
 	}
-
-	statusLine := statusStyle.Render(
-		streakStr +
-			"  " + mutedStyle.Render(fmt.Sprintf("%d entries", len(m.entries))) +
-			msg,
-	)
-
-	sections := []string{m.renderHeader("Journal"), "", top}
-	if today := m.renderTodayLine(); today != "" {
-		sections = append(sections, "", today)
+	mid := mutedStyle.Render(fmt.Sprintf("%d entries", len(m.entries))) + mutedStyle.Render(" · ") + streakStr
+	if today := m.todaySummary(); today != "" {
+		mid += mutedStyle.Render(" · today ") + today
 	}
-	if recent := m.renderRecentEntries(w); recent != "" {
-		sections = append(sections, "", recent)
-	}
-	sections = append(sections, "", statusLine)
+	header := ui.Header(w, titleStyle.Render("diaryctl")+mutedStyle.Render("· Journal"), mid, mutedStyle.Render(time.Now().Format("Mon 02 Jan")))
 
-	body := lipgloss.JoinVertical(lipgloss.Left, sections...)
+	body := lipgloss.JoinVertical(lipgloss.Left, header, "", top)
 
-	// Pin the help bar to the bottom of the screen instead of letting it
-	// glue itself right under the panels — pad the body out to the
-	// terminal height first, same pattern taskctl/notectl use.
+	// Pin the footer to the bottom of the screen instead of letting it glue
+	// itself right under the panels — pad the body out to the terminal
+	// height first, same pattern taskctl/notectl use.
 	for lines := strings.Count(body, "\n") + 1; lines < h-1; lines++ {
 		body += "\n"
 	}
 
-	return body + "\n" + helpStyle.Render(helpText)
+	return body + "\n" + footer
 }
 
 // heatLevels is the shared 5-tier commit-count gradient, index 0 = none.
@@ -346,7 +347,9 @@ func (m *Model) renderHeatmap() string {
 // renderTodayLine is a standalone, prominent summary of today's suite
 // activity — pulled out of the heatmap panel (where it used to be tucked
 // away as a small aside) into its own full-width line.
-func (m *Model) renderTodayLine() string {
+// todaySummary is today's activity as one styled phrase ("3 commits · 2 tasks"),
+// "" until the suite data has loaded.
+func (m *Model) todaySummary() string {
 	if !m.todayLoaded {
 		return ""
 	}
@@ -363,55 +366,10 @@ func (m *Model) renderTodayLine() string {
 	if m.todayDuration > 0 {
 		parts = append(parts, diary.FormatDuration(m.todayDuration))
 	}
-	summary := mutedStyle.Render("nothing yet")
-	if len(parts) > 0 {
-		summary = strings.Join(parts, mutedStyle.Render(" · "))
+	if len(parts) == 0 {
+		return mutedStyle.Render("nothing yet")
 	}
-	return titleStyle.Render("Today") + "  " + summary
-}
-
-// renderRecentEntries is a compact, non-interactive digest of the most
-// recent entries — a glanceable "what have I written lately" separate from
-// the selectable entries panel (which now sizes to its own content instead
-// of stretching to fill the terminal, so it no longer doubles as a
-// look-at-a-glance summary the way the old full-height version did).
-func (m *Model) renderRecentEntries(width int) string {
-	if len(m.entries) == 0 {
-		return ""
-	}
-	const maxShown = 5
-	n := min(maxShown, len(m.entries))
-
-	rowW := width - 2
-	if rowW < 10 {
-		rowW = 10
-	}
-	maxP := rowW - 14
-	if maxP < 0 {
-		maxP = 0
-	}
-
-	var lines []string
-	lines = append(lines, titleStyle.Render("Recent Entries"))
-	for _, e := range m.entries[:n] {
-		dateStr := e.Date.Format("2006-01-02")
-		title, _ := diary.ParseTitleTags(e.Body)
-		preview := title
-		previewStyle := titleRowStyle
-		if preview == "" {
-			preview = firstLine(e.Body)
-			previewStyle = mutedStyle
-		}
-		if len(preview) > maxP {
-			preview = preview[:maxP] + "…"
-		}
-		tag := ""
-		if e.Generated {
-			tag = " " + greenStyle.Render("[AI]")
-		}
-		lines = append(lines, " "+amberStyle.Render(fmt.Sprintf("%-12s", dateStr))+"  "+previewStyle.Render(preview)+tag)
-	}
-	return strings.Join(lines, "\n")
+	return strings.Join(parts, mutedStyle.Render(" · "))
 }
 
 func (m *Model) renderEntryList(width, height int) string {
@@ -496,22 +454,36 @@ func (m *Model) renderEntryList(width, height int) string {
 			tagStyled += " " + greenStyle.Render("[AI]")
 		}
 
-		maxP := rowW - 14 - len(tagPlain)
+		// Everything is measured in display cells (not bytes): the old byte
+		// length plus an appended "…" made truncated titles one cell too wide,
+		// so the row wrapped and "[AI]" fell onto the next line. Hashtags give
+		// way to the title when the row is tight.
+		maxP := rowW - 14 - lipgloss.Width(tagPlain)
+		if maxP < 12 && len(tags) > 0 {
+			tagPlain, tagStyled = "", ""
+			if e.Generated {
+				tagPlain, tagStyled = " [AI]", " "+greenStyle.Render("[AI]")
+			}
+			maxP = rowW - 14 - lipgloss.Width(tagPlain)
+		}
+		if maxP < 4 && tagPlain != "" { // no room for a readable title: the tag gives way too
+			tagPlain, tagStyled = "", ""
+			maxP = rowW - 14
+		}
 		if maxP < 0 {
 			maxP = 0
 		}
-		if len(preview) > maxP {
-			preview = preview[:maxP] + "…"
-		}
+		preview = ansi.Truncate(preview, maxP, "…")
+		preview += strings.Repeat(" ", max(maxP-lipgloss.Width(preview), 0)) // pad by cells, not runes
 
 		switch {
 		case i == m.cursor, i == m.hoverRow:
-			// selectedStyle/hoverStyle.Width(rowW) + Padding(0,1) = rowW+2 = width. No overflow.
-			rowText := fmt.Sprintf("%-12s  %-*s%s", dateStr, maxP, preview, tagPlain)
+			// v2 Width includes the Padding(0,1): Width(rowW+2) = rowW content cells = width in total.
+			rowText := fmt.Sprintf("%-12s  %s%s", dateStr, preview, tagPlain)
 			if i == m.cursor {
-				lines = append(lines, selectedStyle.Width(rowW).Render(rowText))
+				lines = append(lines, selectedStyle.Width(rowW+2).Render(rowText))
 			} else {
-				lines = append(lines, hoverStyle.Width(rowW).Render(rowText))
+				lines = append(lines, hoverStyle.Width(rowW+2).Render(rowText))
 			}
 		default:
 			// Build styled row without nesting ANSI inside fmt.Sprintf — avoids
