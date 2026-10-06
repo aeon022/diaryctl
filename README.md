@@ -174,6 +174,44 @@ export DIARYCTL_DATA_DIR="$HOME/Library/Mobile Documents/com~apple~CloudDocs/dia
 
 Once set, diaryctl automatically switches its SQLite journal mode from WAL to rollback-journal — WAL splits the database across multiple files that a folder-sync client can't update atomically together, so this switch keeps the directory down to a single consistent file whenever diaryctl isn't actively writing. A same-machine lock also prevents two diaryctl processes from opening the database at once (run `diaryctl doctor` to see the current mode and path). This only protects against the same-machine and stale-snapshot failure modes, not two machines editing at the exact same instant; an undownloaded iCloud file is reported explicitly rather than as a bare error.
 
+## Activity in your diary
+
+Every tool in the suite appends what you *do* (task completed, habit checked, note
+written, timer stopped, …) to a shared activity log
+(`~/.local/share/missionctl/activity.jsonl`, titles only — no note bodies, mail text or
+amounts; `MISSIONCTL_DATA_DIR` moves it, `MISSIONCTL_ACTIVITY=off` or `enabled: false` in
+`~/.config/missionctl/activity.yaml` turns logging off). diaryctl can put the day's
+activity into that day's entry as a block like this:
+
+```markdown
+<!-- activity:start -->
+## Activity
+
+- 14:05 taskctl · completed — Steuer abgeben
+- 18:30 habctl · checked — Sport
+<!-- activity:end -->
+```
+
+Only the text between the two markers is ever replaced; the rest of your entry is never
+touched, and running it again refreshes the block instead of adding another.
+
+How it happens is a setting (`diary:` in `activity.yaml`, or `diaryctl activity --mode`):
+
+| Mode | Behavior |
+|------|----------|
+| `ask` (default) | In the TUI, after 18:00, when today's entry exists without a block and there is activity, a popup asks once per session: `y` add now · `n` / `esc` not now (asked again next session) · `a` always (switches to `auto` and adds now) · `x` never (switches to `off`). Not shown while editing, searching, in the palette or in a delete confirmation. |
+| `auto` | The daily daemon run (`diaryctl daemon generate`, default 17:00 — see `diaryctl daemon start --hour`) adds the block to a new entry, and refreshes only the block of an existing one. |
+| `off` | Nothing is added automatically. |
+
+```sh
+diaryctl activity                  # add / refresh today's block now (any mode)
+diaryctl activity --date 2026-10-05
+diaryctl activity --mode auto      # ask | auto | off
+```
+
+diaryctl itself logs `wrote` once per entry date and session when you save an entry
+(editor, `diaryctl today` editing, MCP `write_diary_entry`) — not for generated templates.
+
 ## Recent changes (October 2026)
 
 - **Window focus.** When the terminal window regains focus, the list reloads from the local database — at most every 5 seconds, and only while you are just browsing (never while a form, editor, search, palette or confirmation is open, so nothing you are typing is lost). Terminals that don't report focus events simply never trigger it. The editor is never reloaded.

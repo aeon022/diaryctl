@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"github.com/aeon022/diaryctl/internal/actlog"
+	"github.com/aeon022/missionctl-core/activity"
 	"os/exec"
 	"strings"
 	"time"
@@ -230,6 +232,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.streak, _ = m.store.GetStreak()
 		m.loading = false
+		m.maybeAskActivity()
 		return m, nil
 
 	case spinner.TickMsg:
@@ -338,6 +341,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.actAsk {
+			return m, m.handleActAsk(msg)
 		}
 		switch m.view {
 		case listView:
@@ -822,6 +828,7 @@ func (m *Model) save() {
 	body := m.ta.Value()
 	_ = m.store.SaveEntry(m.editorEntry.Date, body, m.editorEntry.Generated)
 	_ = notectl.WriteBack(m.editorEntry.Date, body)
+	actlog.LogWrote(m.editorEntry.Date)
 	m.editorDirty = false
 	m.lastSaved = time.Now()
 	m.savedFlash = true
@@ -889,4 +896,71 @@ func (m *Model) visibleEntries() []models.Entry {
 		return m.searchRes
 	}
 	return m.entries
+}
+
+// ── Day-end activity prompt ──────────────────────────────────────────────────
+
+// activityPromptHour is when "ask" mode starts offering to add the day's
+// activity to today's entry.
+const activityPromptHour = 18
+
+// maybeAskActivity opens the prompt when everything lines up: ask mode, after
+// 18:00, browsing the list (not editing/searching/deleting), today's entry
+// exists without an activity block yet, and there is activity to add. At most
+// once per TUI session.
+func (m *Model) maybeAskActivity() {
+	if m.actAskShown || m.view != listView || m.searching || m.inPalette || m.confirmDelete {
+		return
+	}
+	now := actlog.Now()
+	if now.Hour() < activityPromptHour {
+		return
+	}
+	if st := activity.Load(); !st.Enabled || st.Diary != activity.DiaryAsk {
+		return
+	}
+	day := now.Format("2006-01-02")
+	for _, e := range m.entries {
+		if e.Date.Format("2006-01-02") != day || activity.HasBlock(e.Body) {
+			continue
+		}
+		if n := len(actlog.Events(now)); n > 0 {
+			m.actAsk, m.actAskShown, m.actAskCount = true, true, n
+		}
+		return
+	}
+}
+
+func (m *Model) handleActAsk(msg tea.KeyPressMsg) tea.Cmd {
+	switch msg.String() {
+	case "y":
+		m.actAsk = false
+		return m.cmdAddActivity()
+	case "a":
+		_ = activity.SetDiaryMode(activity.DiaryAuto)
+		m.actAsk = false
+		m.flash("Activity will be added automatically (diaryctl activity --mode ask to undo)")
+		return m.cmdAddActivity()
+	case "x":
+		_ = activity.SetDiaryMode(activity.DiaryOff)
+		m.actAsk = false
+		m.flash("Activity prompts off (diaryctl activity --mode ask to turn back on)")
+	case "n", "esc":
+		m.actAsk = false
+	}
+	return nil // any other key is swallowed while the popup is open
+}
+
+func (m *Model) cmdAddActivity() tea.Cmd {
+	s, now := m.store, actlog.Now()
+	return func() tea.Msg {
+		if _, err := actlog.Apply(s, now); err != nil {
+			return errMsg{err}
+		}
+		entries, err := s.ListEntries(100)
+		if err != nil {
+			return errMsg{err}
+		}
+		return entriesLoadedMsg{entries}
+	}
 }

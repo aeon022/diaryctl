@@ -92,6 +92,11 @@ type Model struct {
 	paletteQuery  string
 	paletteCursor int
 
+	// day-end activity prompt (ask mode): offered once per session
+	actAsk      bool
+	actAskShown bool
+	actAskCount int
+
 	// delete confirm
 	confirmDelete bool
 	deleteDate    time.Time

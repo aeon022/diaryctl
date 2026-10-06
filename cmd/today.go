@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/aeon022/diaryctl/internal/actlog"
 	"os"
 	"os/exec"
 	"time"
@@ -145,6 +146,7 @@ func openEntryInEditor(s *store.Store, entry *models.Entry) error {
 		return fmt.Errorf("saving edited entry: %w", err)
 	}
 	_ = notectl.WriteBack(entry.Date, string(content))
+	actlog.LogWrote(entry.Date)
 	fmt.Println("Entry saved.")
 	return nil
 }

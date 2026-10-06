@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/aeon022/diaryctl/internal/actlog"
 	"time"
 
 	"github.com/aeon022/diaryctl/internal/diary"
@@ -230,6 +231,7 @@ func handleWriteDiaryEntry(_ context.Context, req mcp.CallToolRequest) (*mcp.Cal
 	if err := s.SaveEntry(date, body, true); err != nil {
 		return toolError(err), nil
 	}
+	actlog.LogWrote(date)
 
 	return mcp.NewToolResultText(fmt.Sprintf("Entry saved for %s", date.Format("2006-01-02"))), nil
 }

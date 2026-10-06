@@ -32,6 +32,9 @@ func (m *Model) viewContent() string {
 	if m.err != nil {
 		return redStyle.Render("Error: "+m.err.Error()) + "\n\nPress q to quit."
 	}
+	if m.actAsk && m.view == listView {
+		return overlay.CenterDim(m.viewList(), m.renderActAskPopup(), m.width, m.height, 0)
+	}
 	switch m.view {
 	case detailView:
 		return m.viewDetail()
@@ -735,4 +738,14 @@ func (m *Model) viewRepos() string {
 
 	lines = append(lines, footer)
 	return strings.Join(lines, "\n")
+}
+
+func (m *Model) renderActAskPopup() string {
+	body := fmt.Sprintf("Add today's activity (%d events) to your diary?\n\n", m.actAskCount) +
+		mutedStyle.Render("y add now  ·  n not now  ·  a always  ·  x never")
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorBlue).
+		Padding(1, 2).
+		Render(body)
 }

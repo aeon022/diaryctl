@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/aeon022/diaryctl/internal/actlog"
+	"github.com/aeon022/missionctl-core/activity"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -210,9 +212,18 @@ var daemonGenerateCmd = &cobra.Command{
 
 		today := time.Now()
 
-		// Skip if entry already exists and is non-empty.
+		autoActivity := activity.Load().Diary == activity.DiaryAuto
+
+		// Skip if entry already exists and is non-empty — but in auto mode
+		// still refresh the activity block (and only that block).
 		existing, _ := s.GetEntry(today)
 		if existing != nil && existing.Body != "" {
+			if autoActivity {
+				if n, err := actlog.Apply(s, today); err == nil && n > 0 {
+					fmt.Printf("✓ Activity (%d events) refreshed in today's entry\n", n)
+					return nil
+				}
+			}
 			fmt.Println("Entry already exists for today — skipping")
 			return nil
 		}
@@ -259,6 +270,9 @@ var daemonGenerateCmd = &cobra.Command{
 			}
 		}
 
+		if autoActivity {
+			body = activity.ReplaceBlock(body, actlog.Block(today))
+		}
 		if err := s.SaveEntry(today, body, false); err != nil {
 			return fmt.Errorf("saving entry: %w", err)
 		}
