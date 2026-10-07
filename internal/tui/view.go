@@ -13,6 +13,7 @@ import (
 	"github.com/aeon022/missionctl-core/keymap"
 	"github.com/aeon022/missionctl-core/overlay"
 	"github.com/aeon022/missionctl-core/statusbar"
+	"github.com/aeon022/missionctl-core/ui"
 )
 
 // ── View ──────────────────────────────────────────────────────────────────────
@@ -29,7 +30,8 @@ func (m *Model) View() tea.View {
 
 func (m *Model) viewContent() string {
 	if m.err != nil {
-		return redStyle.Render("Error: "+m.err.Error()) + "\n\nPress q to quit."
+		return m.chrome("Error", "", "Error", redStyle.Render(m.err.Error()),
+			statusbar.Line(m.geom().w, statusbar.Hints(m.geom().w, [2]string{"q", "quit"}), ""), true)
 	}
 	if m.actAsk && m.view == listView {
 		return overlay.CenterDim(m.viewList(), m.renderActAskPopup(), m.width, m.height, 0)
@@ -51,12 +53,18 @@ func (m *Model) viewContent() string {
 	}
 }
 
-// renderHeader is the one header shared by every view: app name + current
-// section, so it stays a constant anchor no matter which screen is active.
-func (m *Model) renderHeader(section string) string {
-	// titleStyle already has Padding(0, 1), which supplies the leading
-	// and trailing space — don't double it up here.
-	return titleStyle.Render("diaryctl") + mutedStyle.Render("· "+section)
+// chrome is the shared frame of every secondary view: header (diaryctl ·
+// <section>, <mid>, date) + divider (+ blank line in the tall tier), one
+// titled panel around body, and a one-line footer — exactly the terminal
+// height (ui.Frame), like the main list.
+func (m *Model) chrome(section, mid, panelTitle, body, footer string, focused bool) string {
+	g := m.geom()
+	header := ui.Header(g.w, titleStyle.Render("diaryctl")+mutedStyle.Render("· "+section), mid,
+		mutedStyle.Render(time.Now().Format("Mon 02 Jan"))) + "\n" + ui.Divider(g.w, "")
+	if g.spacious {
+		header += "\n"
+	}
+	return ui.Frame(g.h, header, g.panel(g.w, g.bodyH, panelTitle, body, focused), footer)
 }
 
 func (m *Model) helpContent() string {
@@ -98,7 +106,7 @@ func (m *Model) openHelp() {
 		popW = 40
 	}
 
-	vp := viewport.New(viewport.WithWidth(popW-6), viewport.WithHeight(popH-5)) // border 1+1, padding(1,2) → 2 rows/4 cols; -1 row for footer
+	vp := viewport.New(viewport.WithWidth(popW-4), viewport.WithHeight(popH-3)) // ui.Panel: border 2 + 1 left pad; -1 row for the footer line
 	vp.SetContent(m.helpContent())
 
 	m.helpVP = vp
@@ -116,12 +124,7 @@ func (m *Model) renderHelpPopup() string {
 		footer = fmt.Sprintf("j/k scroll (%d%%)  ·  %s", int(m.helpVP.ScrollPercent()*100), footer)
 	}
 	body := m.helpVP.View() + "\n" + mutedStyle.Render(footer)
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorBlue).
-		Padding(1, 2).
-		Width(m.helpPopW).
-		Render(body)
+	return ui.Panel(m.helpPopW, m.helpPopH, "Help", body, true)
 }
 
 // doubleClickWindow opens the entry detail on a second click within this
@@ -280,49 +283,38 @@ func (m *Model) viewDetail() string {
 	if m.detail == nil {
 		return "No entry selected."
 	}
-	w := m.width
-	if w < 40 {
-		w = 80
-	}
+	g := m.geom()
 
 	title, tags := diary.ParseTitleTags(m.detail.Body)
-	header := m.renderHeader("Entry") + "  " + amberStyle.Render(m.detail.Date.Format("2006-01-02"))
-	if title != "" {
-		header += "  " + titleRowStyle.Render(title)
-	}
+	mid := amberStyle.Render(m.detail.Date.Format("2006-01-02"))
 	for _, t := range tags {
 		if diary.IsKnownCategory(t) {
-			header += " " + categoryStyle.Render("#"+t)
+			mid += " " + categoryStyle.Render("#"+t)
 		} else {
-			header += " " + mutedStyle.Render("#"+t)
+			mid += " " + mutedStyle.Render("#"+t)
 		}
 	}
 	if m.detail.Generated {
-		header += " " + greenStyle.Render("[AI]")
+		mid += " " + greenStyle.Render("AI")
 	}
-
-	body := panelStyle.Width(w - 4).Render(m.detailVP.View())
+	if title == "" {
+		title = "Entry"
+	}
 
 	scroll := ""
 	if m.detailVP.TotalLineCount() > m.detailVP.Height() {
 		scroll = mutedStyle.Render(fmt.Sprintf("%d%%", int(m.detailVP.ScrollPercent()*100)))
 	}
-	footer := statusbar.Line(w, statusbar.Hints(w-lipgloss.Width(scroll)-1,
+	footer := statusbar.Line(g.w, statusbar.Hints(g.w-lipgloss.Width(scroll)-1,
 		[2]string{"esc", "back"}, [2]string{"j/k", "scroll"}, [2]string{"e", "edit"},
 		[2]string{"d", "delete"}, [2]string{"g", "open note"}), scroll)
 
-	return lipgloss.JoinVertical(lipgloss.Left,
-		header,
-		body,
-		footer,
-	)
+	return m.chrome("Entry", mid, title, m.detailVP.View(), footer, true)
 }
 
 func (m *Model) viewEditor() string {
-	w := m.width
-	if w < 40 {
-		w = 80
-	}
+	g := m.geom()
+	w := g.w
 
 	content := m.ta.Value()
 	wc := diary.WordCount(content)
@@ -356,103 +348,68 @@ func (m *Model) viewEditor() string {
 
 	statusLeft := statusStyle.Render(date + wcStr + secStr + saveStr + modeStr)
 
-	aKey := "ctrl+g ask claude"
+	// Footer: the editor status on the left (always kept), key hints on the
+	// right in priority order — `esc` first, the last ones drop when narrow.
+	aiLabel := "ask AI"
 	if m.aiGenerating {
-		aKey = "ctrl+g writing…"
+		aiLabel = "writing…"
 	}
-	vimHint := "ctrl+v vim"
+	hints := [][2]string{{"esc", "save & close"}, {"ctrl+s", "save"}, {"ctrl+g", aiLabel}, {"ctrl+v", "vim"}, {"[ ]", "jump"}, {"ctrl+f", "focus"}}
 	if m.vimNormal {
-		vimHint = "i insert  hjkl move"
+		hints = [][2]string{{"esc", "save & close"}, {"i", "insert"}, {"hjkl", "move"}, {"ctrl+s", "save"}}
 	}
-	keysRight := mutedStyle.Render(fmt.Sprintf("ctrl+s save  %s  [ ] jump  ctrl+f focus  %s  esc done", aKey, vimHint))
-	gap := w - lipgloss.Width(statusLeft) - lipgloss.Width(keysRight)
-	if gap < 1 {
-		// statusLeft (word count/timer/save state) is the core status —
-		// drop the key-hint text instead of clamping gap to 1 and
-		// appending it anyway, which could push the line past w.
-		keysRight = ""
-		gap = w - lipgloss.Width(statusLeft)
-		if gap < 0 {
-			gap = 0
-		}
-	}
-	statusBar := statusLeft + strings.Repeat(" ", gap) + keysRight
+	footer := statusbar.Line(w, statusLeft, statusbar.Hints(max(w-lipgloss.Width(statusLeft)-2, 0), hints...))
 
 	aiHint := ""
 	if m.aiGenerating {
 		dots := [4]string{"⠋", "⠙", "⠹", "⠸"}
 		spin := dots[time.Now().UnixMilli()/120%4]
-		aiHint = "  " + amberStyle.Render(fmt.Sprintf("%s AI writing… %d words", spin, m.aiTokens))
+		aiHint = amberStyle.Render(fmt.Sprintf("%s AI writing… %d words", spin, m.aiTokens))
 	} else if aiBlocks > 0 {
-		aiHint = "  " + mutedStyle.Render(fmt.Sprintf("%d AI prompt%s · a to fill · tab to jump", aiBlocks, plural(aiBlocks)))
+		aiHint = mutedStyle.Render(fmt.Sprintf("%d AI prompt%s · a to fill · tab to jump", aiBlocks, plural(aiBlocks)))
 	}
-	header := lipgloss.JoinHorizontal(lipgloss.Center,
-		m.renderHeader("Editor"),
-		aiHint,
-	)
 
-	var editorBlock string
+	editor := m.ta.View()
 	if m.centeredMode {
-		tw := m.ta.Width()
-		pad := (w - tw - 6) / 2
-		if pad < 0 {
-			pad = 0
-		}
+		pad := max((g.contentW(g.w)-m.ta.Width())/2, 0)
 		margin := strings.Repeat(" ", pad)
-		editorBlock = margin + editorBorder.Width(tw+2).Render(m.ta.View())
-	} else {
-		editorBlock = editorBorder.Width(w - 4).Render(m.ta.View())
+		editor = margin + strings.ReplaceAll(editor, "\n", "\n"+margin)
 	}
-
-	return lipgloss.JoinVertical(lipgloss.Left, header, editorBlock, statusBar)
+	return m.chrome("Editor", aiHint, "Entry", editor, footer, true)
 }
 
 func (m *Model) viewRepos() string {
+	g := m.geom()
+	cw := g.contentW(g.w)
 	var lines []string
-	lines = append(lines, m.renderHeader("Repos"), "")
 	if len(m.repos) == 0 {
 		lines = append(lines, emptystate.Render(0, 0, "", "No repos registered", "run: diaryctl init [path]"))
 	} else {
 		for i, r := range m.repos {
-			line := fmt.Sprintf("%-20s %s", r.Name, r.Path)
-			if i == m.repoCursor {
-				lines = append(lines, selectedStyle.Render(line))
-			} else {
-				lines = append(lines, normalStyle.Render(line))
-			}
+			lines = append(lines, ui.Row(cw, i == m.repoCursor, fmt.Sprintf("%-20s %s", r.Name, r.Path)))
 		}
 	}
-	var footer string
+	var hints string
+	right := ""
 	switch {
 	case m.confirmDeleteRepo && len(m.repos) > 0:
-		footer = redStyle.Render(fmt.Sprintf(
+		hints = redStyle.Render(fmt.Sprintf(
 			"Delete %s? y = confirm, any other key = cancel", m.repos[m.repoCursor].Name,
 		))
-	case m.message != "" && time.Since(m.msgAt) < undoWindow:
-		footer = greenStyle.Render(m.message)
 	default:
-		footer = statusbar.Hints(m.width, [2]string{"esc", "back"}, [2]string{"j/k", "navigate"},
+		hints = statusbar.Hints(g.w, [2]string{"esc", "back"}, [2]string{"j/k", "navigate"},
 			[2]string{"d", "delete"}, [2]string{"u", "undo"})
+		if m.message != "" && time.Since(m.msgAt) < undoWindow {
+			right = greenStyle.Render(m.message)
+		}
 	}
-	lines = append(lines, "")
-
-	// Pin the footer to the bottom of the screen instead of letting it
-	// glue itself right under a short repo list — pad the body out to
-	// the terminal height first, same pattern taskctl/notectl use.
-	for len(lines) < m.height-1 {
-		lines = append(lines, "")
-	}
-
-	lines = append(lines, footer)
-	return strings.Join(lines, "\n")
+	mid := mutedStyle.Render(fmt.Sprintf("%d tracked", len(m.repos)))
+	return m.chrome("Repos", mid, "Git repos", strings.Join(lines, "\n"), statusbar.Line(g.w, hints, right), true)
 }
 
 func (m *Model) renderActAskPopup() string {
-	body := fmt.Sprintf("Add today's activity (%d events) to your diary?\n\n", m.actAskCount) +
+	body := fmt.Sprintf("Add today's activity (%d events) to your diary?", m.actAskCount) + "\n\n" +
 		mutedStyle.Render("y add now  ·  n not now  ·  a always  ·  x never")
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorBlue).
-		Padding(1, 2).
-		Render(body)
+	g := m.geom()
+	return ui.Panel(min(g.w, 62), 6, "Activity", " \n"+body, true)
 }

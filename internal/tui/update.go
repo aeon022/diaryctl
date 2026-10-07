@@ -559,21 +559,9 @@ func (m *Model) resizeDetailVP() {
 	if m.detail == nil {
 		return
 	}
-	w, h := m.width, m.height
-	if w < 40 {
-		w = 80
-	}
-	if h < 20 {
-		h = 24
-	}
-	innerW := w - 6 // mirrors panelStyle's border(2)+padding(2) below
-	if innerW < 10 {
-		innerW = 10
-	}
-	vpH := h - 6
-	if vpH < 3 {
-		vpH = 3
-	}
+	g := m.geom() // the detail body is one ui.Panel of the whole body area
+	innerW := max(g.contentW(g.w), 10)
+	vpH := max(g.contentH(g.bodyH), 3)
 	m.detailVP.SetWidth(innerW)
 	m.detailVP.SetHeight(vpH)
 	m.detailVP.SetContent(lipgloss.NewStyle().Width(innerW).Render(renderMarkdown(m.detail.Body)))
@@ -831,23 +819,18 @@ func (m *Model) save() {
 }
 
 func (m *Model) resizeEditor() {
-	w, h := m.width, m.height
-	if w < 40 {
-		w = 80
-	}
-	if h < 20 {
-		h = 24
-	}
+	g := m.geom()
+	cw := g.contentW(g.w)
 	if m.centeredMode {
 		tw := 78
-		if w < tw+6 {
-			tw = w - 6
+		if cw < tw {
+			tw = cw
 		}
 		m.ta.SetWidth(tw)
 	} else {
-		m.ta.SetWidth(w - 6)
+		m.ta.SetWidth(cw)
 	}
-	m.ta.SetHeight(h - 8)
+	m.ta.SetHeight(max(g.contentH(g.bodyH), 3))
 }
 
 func (m *Model) flash(s string) {

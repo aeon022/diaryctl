@@ -199,3 +199,45 @@ func TestSelectedRowKeepsDateReadable(t *testing.T) {
 		t.Errorf("date missing in the selected row: %q", ansi.Strip(sel))
 	}
 }
+
+// Detail, editor and repos share the list's chrome: header, one titled panel,
+// a one-line footer, exactly the terminal height.
+func TestSecondaryViewsShareTheSameChrome(t *testing.T) {
+	for name, keys := range map[string][]string{
+		"detail": {"enter"},
+		"editor": {"e"},
+		"repos":  {"r"},
+	} {
+		for _, w := range []int{50, 60, 80, 100, 140, 170} {
+			for _, h := range []int{24, 30, 40} {
+				m := layoutModel(t, w, h)
+				mm, _ := tuitest.Keys(m, keys...)
+				lines := strings.Split(tuitest.Text(mm), "\n")
+				if len(lines) != h {
+					t.Errorf("%s %dx%d: %d lines, want %d", name, w, h, len(lines), h)
+				}
+				for i, l := range lines {
+					if lipgloss.Width(l) > w {
+						t.Errorf("%s %dx%d: line %d is %d wide", name, w, h, i, lipgloss.Width(l))
+					}
+				}
+				if !strings.Contains(lines[0], "diaryctl") {
+					t.Errorf("%s %dx%d: header missing: %q", name, w, h, lines[0])
+				}
+				if name != "editor" && !strings.Contains(lines[len(lines)-1], "esc") {
+					t.Errorf("%s %dx%d: footer lacks esc hint: %q", name, w, h, lines[len(lines)-1])
+				}
+			}
+		}
+	}
+}
+
+func TestEditorTextSurvivesResize(t *testing.T) {
+	m := layoutModel(t, 100, 30)
+	mm, _ := tuitest.Keys(m, "e")
+	before := mm.(*Model).ta.Value()
+	mm, _ = tuitest.Send(mm, tuitest.Resize(60, 20))
+	if got := mm.(*Model).ta.Value(); got != before {
+		t.Errorf("editor text changed by resize: %q -> %q", before, got)
+	}
+}
