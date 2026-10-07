@@ -459,11 +459,7 @@ func (m *Model) handleList(msg tea.KeyPressMsg) tea.Cmd {
 		// own scroll-window math (maxVis/start) so a digit lands on the
 		// same entry a click at that position would.
 		n := int(msg.String()[0] - '0')
-		maxVis := m.panelHeight() - 3
-		start := 0
-		if m.cursor >= maxVis {
-			start = m.cursor - maxVis + 1
-		}
+		maxVis, start := m.listWindow(m.geom().contentH(m.geom().bodyH))
 		if idx := start + n - 1; idx < len(entries) && n <= maxVis {
 			m.cursor = idx
 		}

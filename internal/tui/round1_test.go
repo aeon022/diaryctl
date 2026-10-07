@@ -44,7 +44,7 @@ func longTitleModel(t *testing.T, w, h int) *Model {
 func TestEntryRowsStayOnOneLineWithAITagAtAnyWidth(t *testing.T) {
 	// The regression, end to end: render the WHOLE list view (so the panel's
 	// real inner width applies) and require every entry — selected or not — to
-	// be a single line carrying its date and its [AI] tag.
+	// be a single line carrying its date and its AI tag.
 	for _, w := range []int{60, 80, 110, 140} {
 		for _, sel := range []int{0, 1} {
 			m := longTitleModel(t, w, 30)
@@ -55,13 +55,13 @@ func TestEntryRowsStayOnOneLineWithAITagAtAnyWidth(t *testing.T) {
 				if lipgloss.Width(l) > w {
 					t.Errorf("w=%d line %d is %d wide: %q", w, i, lipgloss.Width(l), l)
 				}
-				if strings.Contains(l, "2026-09-") && strings.Contains(l, "│") {
+				if strings.Contains(l, "2026-09-") {
 					dates++
 				}
-				if strings.Contains(l, "[AI]") {
+				if strings.Contains(l, " AI ") { // the AI pill is " AI " (pill padding)
 					ai++
 					if !strings.Contains(l, "2026-09-") {
-						t.Errorf("w=%d cursor=%d: [AI] wrapped onto its own line: %q", w, sel, l)
+						t.Errorf("w=%d cursor=%d: the AI tag wrapped onto its own line: %q", w, sel, l)
 					}
 				}
 			}

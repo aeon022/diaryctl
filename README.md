@@ -212,6 +212,16 @@ diaryctl activity --mode auto      # ask | auto | off
 diaryctl itself logs `wrote` once per entry date and session when you save an entry
 (editor, `diaryctl today` editing, MCP `write_diary_entry`) — not for generated templates.
 
+### List layout
+
+The journal list adapts to the terminal width: **below 80 columns** only the entries (a divider with the
+title, no frames); **from 80** the heatmap column ("Last 13 weeks", plus a small "Today" panel) sits beside
+the entries, each in a titled panel; **from 120** a **Preview** panel on the right shows the selected
+entry (date, word count, tags, the start of the body) and follows the cursor. The header carries the entry
+count, streak and today's activity; the AI marker is a small `AI` tag at the end of the row (the title is
+shortened first, so it never wraps). `MISSIONCTL_BORDERS=none` drops the frames. With 30+ terminal rows the
+header gets a blank line below it.
+
 ## Recent changes (October 2026)
 
 - **Window focus.** When the terminal window regains focus, the list reloads from the local database — at most every 5 seconds, and only while you are just browsing (never while a form, editor, search, palette or confirmation is open, so nothing you are typing is lost). Terminals that don't report focus events simply never trigger it. The editor is never reloaded.
