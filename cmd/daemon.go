@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/aeon022/diaryctl/internal/actlog"
 	"github.com/aeon022/missionctl-core/activity"
+	"github.com/aeon022/missionctl-core/applescript"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -283,7 +284,7 @@ var daemonGenerateCmd = &cobra.Command{
 		// macOS notification.
 		if runtime.GOOS == "darwin" {
 			exec.Command("osascript", "-e",
-				fmt.Sprintf(`display notification %q with title "diaryctl"`, notif),
+				fmt.Sprintf(`display notification "%s" with title "diaryctl"`, applescript.EscapeLine(notif)),
 			).Run()
 		}
 
