@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/aeon022/missionctl-core/themepicker"
 	"image/color"
 	"os"
 	"time"
@@ -61,14 +62,15 @@ var adaptive = func() func(light, dark string) color.Color {
 // ── Model ─────────────────────────────────────────────────────────────────────
 
 type Model struct {
-	store   *store.Store
-	view    viewType
-	width   int
-	height  int
-	streak  int
-	err     error
-	loading bool
-	sp      spinner.Model
+	themePicker themepicker.Picker // the "T" popup
+	store       *store.Store
+	view        viewType
+	width       int
+	height      int
+	streak      int
+	err         error
+	loading     bool
+	sp          spinner.Model
 
 	// flash message
 	message string

@@ -7,7 +7,7 @@ import (
 	"github.com/aeon022/missionctl-core/theme"
 )
 
-func TestThemeKeySwitchesLiveAndSaves(t *testing.T) {
+func TestThemeKeyOpensPickerWithLivePreview(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	orig := theme.Current()
 	t.Cleanup(func() { _ = theme.Apply(orig) })
@@ -15,14 +15,15 @@ func TestThemeKeySwitchesLiveAndSaves(t *testing.T) {
 	m := &Model{width: 100, height: 30}
 	before := titleStyle.GetForeground()
 	m.handleList(tea.KeyPressMsg{Text: "T", Code: 'T'})
-
-	if theme.Current() == orig {
-		t.Fatalf("T must switch to the next theme, still %q", orig)
+	if !m.themePicker.IsOpen() {
+		t.Fatal("T opens the theme popup")
 	}
-	if titleStyle.GetForeground() == before {
-		t.Error("cached styles must be rebuilt when the theme changes")
+	m.Update(tea.KeyPressMsg{Text: "j", Code: 'j'}) // previews the next theme live
+	if theme.Current() == orig || titleStyle.GetForeground() == before {
+		t.Error("moving in the popup previews the theme live and rebuilds the cached styles")
 	}
-	if m.message != "Theme: "+theme.Current() {
-		t.Errorf("a short confirmation should name the theme, got %q", m.message)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.themePicker.IsOpen() || m.message != "Theme: "+theme.Current() {
+		t.Errorf("enter closes the popup and confirms the theme, got %q", m.message)
 	}
 }
