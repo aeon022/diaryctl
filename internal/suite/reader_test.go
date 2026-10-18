@@ -99,3 +99,13 @@ func TestToolDBResolution(t *testing.T) {
 		t.Errorf("env must win over config, got %q", got)
 	}
 }
+
+func TestToolDBAlsoReadsConfigYml(t *testing.T) {
+	home := sandbox(t)
+	cfg := filepath.Join(home, ".config/taskctl")
+	os.MkdirAll(cfg, 0o755)
+	os.WriteFile(filepath.Join(cfg, "config.yml"), []byte("data_dir: ~/iCloud/tasks\n"), 0o644)
+	if got, _ := toolDB("taskctl", "taskctl.db", "x", "~/.config/taskctl/config.yaml"); got != filepath.Join(home, "iCloud/tasks/taskctl.db") {
+		t.Errorf("config.yml data_dir = %q", got)
+	}
+}

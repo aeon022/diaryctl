@@ -282,7 +282,11 @@ func ExpandPath(path string) (string, error) {
 // iCloud) looks empty to the diary.
 func toolDB(tool, file, def string, cfgFiles ...string) (string, error) {
 	dir := os.Getenv(strings.ToUpper(tool) + "_DATA_DIR")
+	var candidates []string // the tools read config.yaml and config.yml alike (missionctl-core/config.Store)
 	for _, cf := range cfgFiles {
+		candidates = append(candidates, cf, strings.TrimSuffix(cf, ".yaml")+".yml")
+	}
+	for _, cf := range candidates {
 		if dir != "" {
 			break
 		}
