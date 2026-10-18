@@ -110,7 +110,7 @@ n              generate today's entry
 d              delete entry (y to confirm)
 /              search entries
 r              manage repos
-T              next colour theme (saved for the whole suite)
+T              colour theme picker with live preview (saved for the whole suite)
 q              quit
 ```
 

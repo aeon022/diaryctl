@@ -80,7 +80,7 @@ var paletteCommands = []palette.Command{
 	{Name: "goto", Desc: "Open corresponding note in notectl", Key: "g"},
 	{Name: "repos", Desc: "Browse tracked git repos", Key: "r"},
 	{Name: "search", Desc: "Search entries", Key: "/"},
-	{Name: "theme", Desc: "Next colour theme (saved for the whole suite)", Key: "T"},
+	{Name: "theme", Desc: "Colour theme picker with live preview (saved for the whole suite)", Key: "T"},
 	{Name: "help", Desc: "Show help", Key: "?"},
 	{Name: "quit", Desc: "Quit diaryctl", Key: "q"},
 }
