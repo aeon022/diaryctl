@@ -71,6 +71,7 @@ func (m *Model) helpContent() string {
 	return keymap.New("diaryctl", "developer diary from the terminal").
 		Section("Navigation").
 		Row("j / k", "move down / up").
+		Row("T", "next colour theme (saved for the whole suite)").
 		Row("enter", "open entry").
 		Row("/", "search entries (esc clears)").
 		Row(":", "command palette — type an action by name").

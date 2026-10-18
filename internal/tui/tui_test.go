@@ -19,7 +19,7 @@ func TestLoadingSpinner_ShowsWhileLoadingThenEmptyStateOnceDone(t *testing.T) {
 	if !strings.Contains(view, "Loading entries") {
 		t.Errorf("expected loading spinner text while m.loading is true, got:\n%s", view)
 	}
-	if strings.Contains(view, "No entries yet") {
+	if strings.Contains(view, "Welcome to diaryctl") {
 		t.Error("expected the empty-state message to be suppressed while loading")
 	}
 
@@ -29,7 +29,7 @@ func TestLoadingSpinner_ShowsWhileLoadingThenEmptyStateOnceDone(t *testing.T) {
 	m.loading = false
 
 	view = m.renderEntryList(60, 20)
-	if !strings.Contains(view, "No entries yet") {
+	if !strings.Contains(view, "Welcome to diaryctl") {
 		t.Errorf("expected the empty-state message once loading is done and there are no entries, got:\n%s", view)
 	}
 }

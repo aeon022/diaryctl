@@ -6,38 +6,46 @@ import (
 	"github.com/aeon022/diaryctl/internal/store"
 	"github.com/aeon022/missionctl-core/palette"
 	"github.com/aeon022/missionctl-core/theme"
+	"image/color"
 )
 
 // ── Design system ─────────────────────────────────────────────────────────────
 
 var (
+	// Rebuilt by refreshStyles when the theme changes.
+	colorGreen, colorAmber, colorMuted, colorRed, selectedBg, selectedFg, colorBlue                                                                                                  color.Color
+	titleStyle, selectedStyle, hoverStyle, normalStyle, mutedStyle, amberStyle, greenStyle, redStyle, helpStyle, statusStyle, categoryStyle, titleRowStyle, panelStyle, editorBorder lipgloss.Style
+)
+
+func init() {
+	refreshStyles()
+	theme.OnChange(refreshStyles)
+}
+
+// refreshStyles builds every cached colour and style from the active theme (live theme switching).
+func refreshStyles() {
 	// Shared across the suite via missionctl-core/theme.
 	colorGreen = theme.GreenV2
 	colorAmber = theme.AmberV2
 	colorMuted = theme.MutedV2
-	colorRed   = theme.RedV2
+	colorRed = theme.RedV2
 	selectedBg = theme.SelectedBgV2
 	selectedFg = theme.SelectedFgV2
-	colorBlue  = theme.BlueV2
-)
-
-var (
+	colorBlue = theme.BlueV2
 	titleStyle = lipgloss.NewStyle().
-			Bold(true).Foreground(colorBlue).Padding(0, 1)
-
+		Bold(true).Foreground(colorBlue).Padding(0, 1)
 	selectedStyle = lipgloss.NewStyle().
-			Background(selectedBg).Foreground(selectedFg).Padding(0, 1)
+		Background(selectedBg).Foreground(selectedFg).Padding(0, 1)
 	// hoverStyle matches selectedStyle's Padding(0, 1) so a hovered row
 	// renders at the same total width as a selected one (theme.Hover
 	// itself carries no padding, since that's context-specific).
-	hoverStyle = theme.HoverV2.Padding(0, 1)
-
+	hoverStyle = lipgloss.NewStyle().Inherit(theme.HoverV2).Padding(0, 1)
 	normalStyle = lipgloss.NewStyle().Padding(0, 1)
-	mutedStyle  = lipgloss.NewStyle().Foreground(colorMuted)
-	amberStyle  = lipgloss.NewStyle().Foreground(colorAmber).Bold(true)
-	greenStyle  = lipgloss.NewStyle().Foreground(colorGreen)
-	redStyle    = lipgloss.NewStyle().Foreground(colorRed).Bold(true)
-	helpStyle   = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
+	mutedStyle = lipgloss.NewStyle().Foreground(colorMuted)
+	amberStyle = lipgloss.NewStyle().Foreground(colorAmber).Bold(true)
+	greenStyle = lipgloss.NewStyle().Foreground(colorGreen)
+	redStyle = lipgloss.NewStyle().Foreground(colorRed).Bold(true)
+	helpStyle = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
 	statusStyle = lipgloss.NewStyle().Foreground(colorMuted).Padding(0, 1)
 	// categoryStyle marks a recognized life-category tag (FH, Studium,
 	// Projekt, Day-Job, ... — see diary.IsKnownCategory) so it reads as
@@ -46,15 +54,13 @@ var (
 	// titleRowStyle marks an entry-list row whose preview is a real
 	// parsed title (diary.ParseTitleTags), not just a muted body snippet.
 	titleRowStyle = lipgloss.NewStyle().Bold(true)
-
 	panelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorMuted).Padding(0, 1)
-
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorMuted).Padding(0, 1)
 	editorBorder = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorGreen).Padding(0, 1)
-)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorGreen).Padding(0, 1)
+}
 
 // ── command palette (":") ────────────────────────────────────────────────────
 //
@@ -74,6 +80,7 @@ var paletteCommands = []palette.Command{
 	{Name: "goto", Desc: "Open corresponding note in notectl", Key: "g"},
 	{Name: "repos", Desc: "Browse tracked git repos", Key: "r"},
 	{Name: "search", Desc: "Search entries", Key: "/"},
+	{Name: "theme", Desc: "Next colour theme (saved for the whole suite)", Key: "T"},
 	{Name: "help", Desc: "Show help", Key: "?"},
 	{Name: "quit", Desc: "Quit diaryctl", Key: "q"},
 }

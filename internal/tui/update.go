@@ -20,6 +20,7 @@ import (
 	"github.com/aeon022/diaryctl/internal/store"
 	"github.com/aeon022/diaryctl/internal/suite"
 	"github.com/aeon022/missionctl-core/palette"
+	"github.com/aeon022/missionctl-core/theme"
 	"github.com/sahilm/fuzzy"
 )
 
@@ -489,6 +490,13 @@ func (m *Model) handleList(msg tea.KeyPressMsg) tea.Cmd {
 	case "g":
 		if len(entries) > 0 {
 			return jumpToNoteCmd(entries[m.cursor].Date)
+		}
+	case "T": // live theme switch; the choice is saved for every suite tool
+		name, err := theme.Cycle()
+		if err != nil {
+			m.flash("Theme: " + err.Error())
+		} else {
+			m.flash("Theme: " + name)
 		}
 	case "u":
 		if m.lastDeleted != nil && time.Since(m.msgAt) < undoWindow {

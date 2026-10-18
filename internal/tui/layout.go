@@ -239,7 +239,7 @@ func (m *Model) renderEntryList(cw, ch int) string {
 		if m.loading {
 			lines = append(lines, "", emptystate.Loading(0, 0, m.sp.View(), "Loading entries…"))
 		} else {
-			lines = append(lines, "", emptystate.Render(0, 0, "", "No entries yet", "press n to generate today's entry."))
+			lines = append(lines, "", emptystate.Render(0, 0, "", "Welcome to diaryctl", diaryOnboarding()))
 		}
 		return strings.Join(lines, "\n")
 	}
@@ -414,4 +414,14 @@ func (m *Model) viewList() string {
 	}
 	body := lipgloss.JoinHorizontal(lipgloss.Top, cols...)
 	return ui.Frame(g.h, header, body, footer)
+}
+
+// diaryOnboarding is the first-run hint of an empty diary: what to try first.
+func diaryOnboarding() string {
+	return strings.Join([]string{
+		"○  n   generate today's entry",
+		"○  /   search your entries",
+		"○  :   command palette",
+		"○  T   pick a colour theme",
+	}, "\n")
 }
