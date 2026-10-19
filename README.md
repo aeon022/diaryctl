@@ -4,6 +4,16 @@ Developer diary powered by git history and AI. Part of the [missionctl](https://
 
 Reads your commits, completed tasks, calendar events, and time logs. Generates a structured diary template. Press `ctrl+g` in the editor and Claude writes the narrative — or let the daemon handle it automatically at end of day.
 
+![diaryctl demo](docs/demo.gif)
+
+**Install**
+
+```bash
+brew install aeon022/tap/diaryctl
+```
+
+Prebuilt binaries for macOS and Linux (arm64, amd64) are on the [Releases](https://github.com/aeon022/diaryctl/releases) page. Questions: see [SUPPORT.md](SUPPORT.md).
+
 ---
 
 ## Quick Start
