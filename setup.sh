@@ -41,3 +41,6 @@ else
   echo "  To enable MCP (Claude Code integration), add to ~/.claude.json:"
   echo "  \"mcpServers\": { \"diaryctl\": { \"command\": \"$HOME/.local/bin/diaryctl\", \"args\": [\"mcp\"] } }"
 fi
+
+# man pages (best effort): man diaryctl
+mkdir -p "$HOME/.local/share/man/man1" && "${INSTALL_DIR:-$HOME/.local/bin}/diaryctl" man "$HOME/.local/share/man/man1" >/dev/null 2>&1 || true
